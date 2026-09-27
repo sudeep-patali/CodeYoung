@@ -62,9 +62,18 @@ function getTransporter() {
     // Easiest path (e.g. SMTP_SERVICE=gmail): nodemailer's built-in
     // "service" shorthand knows the right host/port for well-known
     // providers, so we only need the account + app password.
+    //
+    // Same fail-fast reasoning as the host/port branch below: without an
+    // explicit timeout, a blocked/slow outbound connection (common on
+    // hosts like Render) falls back to nodemailer's ~2 minute default,
+    // which leaves the frontend's request hanging instead of erroring
+    // back quickly.
     transporter = nodemailer.createTransport({
       service: env.SMTP_SERVICE,
       auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
     });
     return transporter;
   }
