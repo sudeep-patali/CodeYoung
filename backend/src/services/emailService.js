@@ -36,6 +36,42 @@ async function sendViaResendApi({ to, subject, text, html }) {
   return response.json();
 }
 
+/**
+ * Sends via SendGrid's HTTPS API (https://api.sendgrid.com/v3/mail/send).
+ * Same rationale as Resend above - plain HTTPS, not affected by blocked
+ * outbound SMTP ports. Checked after RESEND_API_KEY; set SENDGRID_API_KEY
+ * instead if you've verified a Single Sender with SendGrid rather than a
+ * Resend domain - Single Sender Verification lets you send to any
+ * recipient without owning a domain, which Resend's sandbox mode does not.
+ */
+async function sendViaSendGridApi({ to, subject, text, html }) {
+  const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.SENDGRID_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: env.EMAIL_FROM },
+      subject,
+      content: [
+        { type: 'text/plain', value: text },
+        ...(html ? [{ type: 'text/html', value: html }] : []),
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`SendGrid API error (${response.status}): ${body || response.statusText}`);
+  }
+
+  // SendGrid returns 202 Accepted with an empty body on success - unlike
+  // Resend there's no JSON payload to parse.
+  return { accepted: true };
+}
+
 function getTransporter() {
   if (transporter) return transporter;
 
@@ -99,6 +135,13 @@ async function sendMail({ to, subject, text, html }) {
   // for why this is the more reliable path, especially for Resend users.
   if (env.RESEND_API_KEY) {
     return sendViaResendApi({ to, subject, text, html });
+  }
+
+  // SendGrid's HTTP API is the next preference - same reliability benefit
+  // as Resend, and a good option if you've done Single Sender Verification
+  // there instead of a Resend domain.
+  if (env.SENDGRID_API_KEY) {
+    return sendViaSendGridApi({ to, subject, text, html });
   }
 
   const mailer = getTransporter();

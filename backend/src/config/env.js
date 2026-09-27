@@ -42,6 +42,13 @@ const env = {
   // is the most common cause of signup/booking emails hanging or failing.
   RESEND_API_KEY: process.env.RESEND_API_KEY || '',
 
+  // Alternative HTTPS API path: SendGrid. Checked after RESEND_API_KEY -
+  // set this instead of RESEND_API_KEY if you're using SendGrid's Single
+  // Sender Verification (lets you send to any recipient without owning a
+  // domain, unlike Resend's sandbox mode which only delivers to the
+  // address you signed up with).
+  SENDGRID_API_KEY: process.env.SENDGRID_API_KEY || '',
+
   REMINDER_LEAD_TIME_MINUTES: parseInt(process.env.REMINDER_LEAD_TIME_MINUTES || '60', 10),
   DEFAULT_MAX_CLASSES_PER_MENTOR_PER_DAY: parseInt(
     process.env.DEFAULT_MAX_CLASSES_PER_MENTOR_PER_DAY || '2',
