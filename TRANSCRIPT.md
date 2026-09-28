@@ -524,23 +524,394 @@ Implemented the plan.
 
 ## User -
 
-give the transcript.md
+I need to continue improving the CodeYoung application with the following additional requirements.
+
+### 1. Parent Free-Trial Booking Limit
+
+Make sure that **one parent can book a maximum of 2 free-trial classes per day**.
+
+- A parent must not be allowed to book more than 2 free trials on the same calendar day.
+- If the parent has already booked 2 free trials for that day and attempts to book another one, prevent the booking.
+- Display a clear message such as:
+
+> "You can book a maximum of 2 free trial classes per day."
+
+- This restriction must be enforced by the **backend**, not only by the frontend.
+- The frontend should also communicate the restriction clearly before the parent attempts to book.
+
+### 2. Preferred Slot Time Badge
+
+The preferred slot-time section should clearly communicate the parent's remaining free-trial availability for that day.
+
+For example:
+
+> Preferred Slot: 10:00 AM
+> Free trials remaining today: 1
+
+If the parent has already used both free trials:
+
+> Preferred Slot: 10:00 AM
+> You have used all 2 free trials for today.
+
+If the parent attempts to access the free-trial booking flow for a day where they have already reached the limit, show the appropriate restriction message directly near the preferred-slot information.
+
+### 3. Booked Slot Must Follow the Preferred Slot
+
+When a parent selects a preferred slot for a particular day, the confirmed booking time should be selected from the **preferred slot for that day**.
+
+Do not display or confirm an unrelated time.
+
+The booking flow should therefore work as:
+
+1. Parent selects a date.
+2. Parent selects a preferred time slot available on that date.
+3. The system checks mentor availability for that exact requested slot.
+4. The system finds an eligible mentor.
+5. The booking is created for that selected date and time.
+6. The confirmed booking displayed to the parent must correspond to that selected preferred slot.
+
+The backend should remain the source of truth for the final booking time.
+
+### 4. Google Signup: First-Time Country Selection
+
+If a parent signs up using Google for the first time, ask them to provide their **country**.
+
+The flow should be:
+
+1. Parent clicks **Continue with Google**.
+2. Google authentication succeeds.
+3. Check whether this Google account already exists.
+4. If it is a new user:
+   - Retrieve the Google name and email.
+   - Ask the parent to select/enter their country.
+   - Save the country in the user's profile.
+   - Detect/store their timezone where possible.
+5. Complete registration.
+6. Redirect the parent to the Parent Dashboard.
+
+Returning Google users should not be asked for the country again if it is already stored.
+
+The country should be stored in MongoDB as part of the parent's profile.
+
+### 5. Timezone and Country
+
+Continue using proper IANA timezone identifiers rather than manually calculated UTC offsets.
+
+For example:
+
+- United States → appropriate IANA timezone based on the parent's actual timezone.
+- United Kingdom → `Europe/London`
+- India → `Asia/Kolkata`
+
+The application must continue to handle Daylight Saving Time correctly.
+
+The country and timezone are separate concepts:
+
+- `country` identifies the parent's country.
+- `timezone` identifies the parent's local timezone.
+
+Do not assume that a country always has only one timezone.
+
+### 6. MongoDB Atlas
+
+The application is currently connected to **MongoDB Atlas**.
+
+The MongoDB Atlas connection string must remain inside the backend environment variables and must never be hardcoded into source code or committed to GitHub.
+
+Use:
+
+```env
+MONGO_URI=<YOUR_MONGODB_ATLAS_CONNECTION_STRING>
+```
+
+The actual connection string must be kept secret.
+
+### 7. Email Service
+
+The application is **no longer using SMTP directly**.
+
+The application now uses **SendGrid** for transactional emails.
+
+Update the email implementation and documentation accordingly.
+
+Do not document Nodemailer/SMTP as the current email solution.
+
+The backend should use SendGrid's API for:
+
+- Booking confirmation emails
+- Mentor notification emails
+- Parent notification emails
+- One-hour class reminder emails
+- Any other transactional emails required by the application
+
+Keep SendGrid API credentials inside environment variables.
+
+Example:
+
+```env
+SENDGRID_API_KEY=<YOUR_SENDGRID_API_KEY>
+SENDGRID_FROM_EMAIL=<VERIFIED_SENDGRID_SENDER_EMAIL>
+```
+
+Never expose the SendGrid API key in frontend code.
+
+### 8. README.md
+
+Create/update a detailed `README.md` for the complete CodeYoung project.
+
+At the very top of the README, clearly display the currently deployed applications:
+
+```text
+CodeYoung — Trial Class Booking System
+
+Frontend:url
+
+Admin:url
+
+Backend API:url
+```
+
+The README should explain the complete system, architecture, setup process, environment variables, database, authentication, booking rules, timezone handling, email system, and deployment.
+
+Include setup instructions for:
+
+- Backend
+- Parent/Mentor frontend
+- Admin frontend
+
+Also explain how to run each application locally.
+
+### 9. Environment Variables
+
+Document separate environment configuration for:
+
+```text
+backend
+frontend-app
+frontend-admin
+```
+
+#### Backend `.env`
+
+The README should document variables such as:
+
+```env
+PORT=5000
+
+MONGO_URI=<YOUR_MONGODB_ATLAS_CONNECTION_STRING>
+
+JWT_SECRET=<YOUR_JWT_SECRET>
+JWT_EXPIRY=7d
+
+GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
+GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
+GOOGLE_CALLBACK_URL=<YOUR_GOOGLE_CALLBACK_URL>
+
+SENDGRID_API_KEY=<YOUR_SENDGRID_API_KEY>
+SENDGRID_FROM_EMAIL=<YOUR_VERIFIED_SENDGRID_EMAIL>
+
+FRONTEND_URL=http://localhost:5173
+ADMIN_FRONTEND_URL=http://localhost:5174
+
+REMINDER_LEAD_TIME_MINUTES=60
+DEFAULT_MAX_CLASSES_PER_MENTOR_PER_DAY=2
+```
+
+The actual production values must not be committed.
+
+#### Frontend `.env`
+
+Document the required frontend environment variables, for example:
+
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
+```
+
+For production, the API URL should point to:
+
+```env
+VITE_API_URL=https://codeyoung-1-paui.onrender.com/api
+```
+
+#### Admin `.env`
+
+Document the admin frontend environment variables, for example:
+
+```env
+VITE_API_URL=http://localhost:5000/api
+```
+
+For production:
+
+```env
+VITE_API_URL=https://codeyoung-1-paui.onrender.com/api
+```
+
+Use the exact variables required by the existing implementation, and make sure the README does not expose actual secrets.
+
+### 10. README Requirements
+
+The README should contain the following sections:
+
+1. Project Overview
+2. Live Application URLs
+3. Features
+4. System Architecture
+5. Technology Stack
+6. Project Structure
+7. Authentication
+8. Parent Features
+9. Mentor Features
+10. Admin Features
+11. Trial-Class Booking Flow
+12. Free-Trial Booking Limits
+13. Mentor Assignment Logic
+14. Preferred Slot Handling
+15. Timezone and DST Handling
+16. Google Authentication
+17. Country Selection for New Google Users
+18. Email System: SendGrid
+19. One-Hour Reminder System
+20. MongoDB Atlas
+21. Environment Variables
+22. Local Development Setup
+23. Backend Setup
+24. Frontend Setup
+25. Admin Setup
+26. Database Setup
+27. Default 10 Mentors
+28. API Overview
+29. Deployment
+30. Security Considerations
+31. Troubleshooting
+32. Project Status
+
+### 11. Running the Project Locally
+
+The README should clearly explain the commands.
+
+#### Backend
+
+```bash
+cd backend
+npm install
+npm run seed
+npm run dev
+```
+
+The exact commands should match the existing `package.json`.
+
+#### Frontend
+
+```bash
+cd frontend-app
+npm install
+npm run dev
+```
+
+#### Admin
+
+```bash
+cd frontend-admin
+npm install
+npm run dev
+```
+
+Explain the expected local URLs for each application.
+
+### 12. Default Mentors
+
+The system should continue to include **10 mentors by default**.
+
+The seed process must be idempotent.
+
+Running the seed command multiple times must not create duplicate mentors.
+
+The README should explain:
+
+- How the 10 mentors are created.
+- Their default login credentials if applicable.
+- Their timezone.
+- Their maximum daily trial-class capacity.
+- How an admin can later edit/deactivate them.
+
+### 13. Backend Enforcement
+
+The following restrictions must be enforced server-side:
+
+- Maximum 2 free trials per parent per day.
+- Maximum 2 classes per mentor per day by default.
+- No overlapping mentor bookings.
+- Only active mentors can receive new bookings.
+- Parent role cannot be created through a mentor-registration request.
+- Mentor accounts cannot self-register.
+- Admin-only operations must require admin authorization.
+- Booking must use a valid available slot.
+- Preferred booking time must be respected.
+- A parent who has reached the daily free-trial limit cannot create another booking.
+
+Frontend validation should improve UX, but **backend validation must always remain authoritative**.
 
 ## AI -
 
-No auto-generated transcript existed, so I wrote a summary file and delivered it with the final project zip.
+I updated the CodeYoung requirements to include the new booking and account-flow rules and aligned the documentation requirements with the application's current deployment and infrastructure.
 
-📦 **Delivered files: `TRANSCRIPT.md` + final project zip**
+The important changes are:
 
-## User -
+### Free-Trial Booking
 
-give as user vs ai
+- A parent can book **at most 2 free trials per day**.
+- The restriction is enforced on both frontend and backend.
+- A third booking attempt is blocked with a clear message.
+- The preferred-slot badge communicates the parent's remaining availability.
+- The final booking time comes from the selected preferred slot for that specific date.
 
-## AI -
+### Google Signup
 
-Reformatted the transcript summary as a User / AI dialogue.
+New Google users are asked for their **country during their first registration**.
 
-📦 **Delivered file: `TRANSCRIPT.md`** (User vs AI format)
+The country is stored with the user profile, while the user's IANA timezone is stored separately so timezone conversion and DST handling remain correct.
+
+Existing Google users who already have a country stored do not need to enter it again.
+
+### Database
+
+The project uses **MongoDB Atlas**.
+
+The MongoDB Atlas connection string is configured through the backend `.env` file and must not be committed to GitHub.
+
+### Email
+
+The documentation has been updated to reflect that the project now uses **SendGrid**, not SMTP.
+
+SendGrid API credentials must remain backend-only environment variables.
+
+### README
+
+The README should provide complete setup and operational documentation covering:
+
+- Architecture
+- Live URLs
+- Frontend
+- Admin frontend
+- Backend
+- MongoDB Atlas
+- SendGrid
+- Authentication
+- Google signup
+- Country/timezone handling
+- Free-trial limits
+- Preferred slots
+- Mentor assignment
+- Default 10 mentors
+- Reminder emails
+- Environment variables
+- Local development
+- Deployment
+- API structure
+- Security
+- Troubleshooting
 
 ## User -
 
@@ -652,489 +1023,4 @@ Vite bakes env vars in at build time, so if you change one later you need to red
 
 I can apply the code changes from Step 2 (cookies, interceptor, `vercel.json`, trust proxy) directly to the project and give you an updated zip. Want me to do that?
 
-## User -
 
-I need to continue improving the CodeYoung application with the following additional requirements.
-
-### 1. Parent Free-Trial Booking Limit
-
-Make sure that **one parent can book a maximum of 2 free-trial classes per day**.
-
-- A parent must not be allowed to book more than 2 free trials on the same calendar day.
-- If the parent has already booked 2 free trials for that day and attempts to book another one, prevent the booking.
-- Display a clear message such as:
-
-> "You can book a maximum of 2 free trial classes per day."
-
-- This restriction must be enforced by the **backend**, not only by the frontend.
-- The frontend should also communicate the restriction clearly before the parent attempts to book.
-
-### 2. Preferred Slot Time Badge
-
-The preferred slot-time section should clearly communicate the parent's remaining free-trial availability for that day.
-
-For example:
-
-> Preferred Slot: 10:00 AM
-> Free trials remaining today: 1
-
-If the parent has already used both free trials:
-
-> Preferred Slot: 10:00 AM
-> You have used all 2 free trials for today.
-
-If the parent attempts to access the free-trial booking flow for a day where they have already reached the limit, show the appropriate restriction message directly near the preferred-slot information.
-
-### 3. Booked Slot Must Follow the Preferred Slot
-
-When a parent selects a preferred slot for a particular day, the confirmed booking time should be selected from the **preferred slot for that day**.
-
-Do not display or confirm an unrelated time.
-
-The booking flow should therefore work as:
-
-1. Parent selects a date.
-2. Parent selects a preferred time slot available on that date.
-3. The system checks mentor availability for that exact requested slot.
-4. The system finds an eligible mentor.
-5. The booking is created for that selected date and time.
-6. The confirmed booking displayed to the parent must correspond to that selected preferred slot.
-
-The backend should remain the source of truth for the final booking time.
-
-### 4. Google Signup: First-Time Country Selection
-
-If a parent signs up using Google for the first time, ask them to provide their **country**.
-
-The flow should be:
-
-1. Parent clicks **Continue with Google**.
-2. Google authentication succeeds.
-3. Check whether this Google account already exists.
-4. If it is a new user:
-   - Retrieve the Google name and email.
-   - Ask the parent to select/enter their country.
-   - Save the country in the user's profile.
-   - Detect/store their timezone where possible.
-5. Complete registration.
-6. Redirect the parent to the Parent Dashboard.
-
-Returning Google users should not be asked for the country again if it is already stored.
-
-The country should be stored in MongoDB as part of the parent's profile.
-
-### 5. Timezone and Country
-
-Continue using proper IANA timezone identifiers rather than manually calculated UTC offsets.
-
-For example:
-
-- United States → appropriate IANA timezone based on the parent's actual timezone.
-- United Kingdom → `Europe/London`
-- India → `Asia/Kolkata`
-
-The application must continue to handle Daylight Saving Time correctly.
-
-The country and timezone are separate concepts:
-
-- `country` identifies the parent's country.
-- `timezone` identifies the parent's local timezone.
-
-Do not assume that a country always has only one timezone.
-
-### 6. Current Deployment URLs
-
-The application is currently deployed as follows:
-
-**Parent/Mentor Frontend:**
-
-https://code-young-nzld.vercel.app/
-
-**Admin Frontend:**
-
-https://code-young-8lim.vercel.app/
-
-**Backend API:**
-
-https://codeyoung-1-paui.onrender.com/api
-
-These URLs should be documented in the project README.
-
-### 7. MongoDB Atlas
-
-The application is currently connected to **MongoDB Atlas**.
-
-The MongoDB Atlas connection string must remain inside the backend environment variables and must never be hardcoded into source code or committed to GitHub.
-
-Use:
-
-```env
-MONGO_URI=<YOUR_MONGODB_ATLAS_CONNECTION_STRING>
-```
-
-The actual connection string must be kept secret.
-
-### 8. Email Service
-
-The application is **no longer using SMTP directly**.
-
-The application now uses **SendGrid** for transactional emails.
-
-Update the email implementation and documentation accordingly.
-
-Do not document Nodemailer/SMTP as the current email solution.
-
-The backend should use SendGrid's API for:
-
-- Booking confirmation emails
-- Mentor notification emails
-- Parent notification emails
-- One-hour class reminder emails
-- Any other transactional emails required by the application
-
-Keep SendGrid API credentials inside environment variables.
-
-Example:
-
-```env
-SENDGRID_API_KEY=<YOUR_SENDGRID_API_KEY>
-SENDGRID_FROM_EMAIL=<VERIFIED_SENDGRID_SENDER_EMAIL>
-```
-
-Never expose the SendGrid API key in frontend code.
-
-### 9. README.md
-
-Create/update a detailed `README.md` for the complete CodeYoung project.
-
-At the very top of the README, clearly display the currently deployed applications:
-
-```text
-CodeYoung — Trial Class Booking System
-
-Frontend:
-https://code-young-nzld.vercel.app/
-
-Admin:
-https://code-young-8lim.vercel.app/
-
-Backend API:
-https://codeyoung-1-paui.onrender.com/api
-```
-
-The README should explain the complete system, architecture, setup process, environment variables, database, authentication, booking rules, timezone handling, email system, and deployment.
-
-Include setup instructions for:
-
-- Backend
-- Parent/Mentor frontend
-- Admin frontend
-
-Also explain how to run each application locally.
-
-### 10. Environment Variables
-
-Document separate environment configuration for:
-
-```text
-backend
-frontend-app
-frontend-admin
-```
-
-#### Backend `.env`
-
-The README should document variables such as:
-
-```env
-PORT=5000
-
-MONGO_URI=<YOUR_MONGODB_ATLAS_CONNECTION_STRING>
-
-JWT_SECRET=<YOUR_JWT_SECRET>
-JWT_EXPIRY=7d
-
-GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
-GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
-GOOGLE_CALLBACK_URL=<YOUR_GOOGLE_CALLBACK_URL>
-
-SENDGRID_API_KEY=<YOUR_SENDGRID_API_KEY>
-SENDGRID_FROM_EMAIL=<YOUR_VERIFIED_SENDGRID_EMAIL>
-
-FRONTEND_URL=http://localhost:5173
-ADMIN_FRONTEND_URL=http://localhost:5174
-
-REMINDER_LEAD_TIME_MINUTES=60
-DEFAULT_MAX_CLASSES_PER_MENTOR_PER_DAY=2
-```
-
-The actual production values must not be committed.
-
-#### Frontend `.env`
-
-Document the required frontend environment variables, for example:
-
-```env
-VITE_API_URL=http://localhost:5000/api
-VITE_GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
-```
-
-For production, the API URL should point to:
-
-```env
-VITE_API_URL=https://codeyoung-1-paui.onrender.com/api
-```
-
-#### Admin `.env`
-
-Document the admin frontend environment variables, for example:
-
-```env
-VITE_API_URL=http://localhost:5000/api
-```
-
-For production:
-
-```env
-VITE_API_URL=https://codeyoung-1-paui.onrender.com/api
-```
-
-Use the exact variables required by the existing implementation, and make sure the README does not expose actual secrets.
-
-### 11. README Requirements
-
-The README should contain the following sections:
-
-1. Project Overview
-2. Live Application URLs
-3. Features
-4. System Architecture
-5. Technology Stack
-6. Project Structure
-7. Authentication
-8. Parent Features
-9. Mentor Features
-10. Admin Features
-11. Trial-Class Booking Flow
-12. Free-Trial Booking Limits
-13. Mentor Assignment Logic
-14. Preferred Slot Handling
-15. Timezone and DST Handling
-16. Google Authentication
-17. Country Selection for New Google Users
-18. Email System: SendGrid
-19. One-Hour Reminder System
-20. MongoDB Atlas
-21. Environment Variables
-22. Local Development Setup
-23. Backend Setup
-24. Frontend Setup
-25. Admin Setup
-26. Database Setup
-27. Default 10 Mentors
-28. API Overview
-29. Deployment
-30. Security Considerations
-31. Troubleshooting
-32. Project Status
-
-### 12. Running the Project Locally
-
-The README should clearly explain the commands.
-
-#### Backend
-
-```bash
-cd backend
-npm install
-npm run seed
-npm run dev
-```
-
-The exact commands should match the existing `package.json`.
-
-#### Frontend
-
-```bash
-cd frontend-app
-npm install
-npm run dev
-```
-
-#### Admin
-
-```bash
-cd frontend-admin
-npm install
-npm run dev
-```
-
-Explain the expected local URLs for each application.
-
-### 13. Default Mentors
-
-The system should continue to include **10 mentors by default**.
-
-The seed process must be idempotent.
-
-Running the seed command multiple times must not create duplicate mentors.
-
-The README should explain:
-
-- How the 10 mentors are created.
-- Their default login credentials if applicable.
-- Their timezone.
-- Their maximum daily trial-class capacity.
-- How an admin can later edit/deactivate them.
-
-### 14. Backend Enforcement
-
-The following restrictions must be enforced server-side:
-
-- Maximum 2 free trials per parent per day.
-- Maximum 2 classes per mentor per day by default.
-- No overlapping mentor bookings.
-- Only active mentors can receive new bookings.
-- Parent role cannot be created through a mentor-registration request.
-- Mentor accounts cannot self-register.
-- Admin-only operations must require admin authorization.
-- Booking must use a valid available slot.
-- Preferred booking time must be respected.
-- A parent who has reached the daily free-trial limit cannot create another booking.
-
-Frontend validation should improve UX, but **backend validation must always remain authoritative**.
-
-## AI -
-
-I updated the CodeYoung requirements to include the new booking and account-flow rules and aligned the documentation requirements with the application's current deployment and infrastructure.
-
-The important changes are:
-
-### Free-Trial Booking
-
-- A parent can book **at most 2 free trials per day**.
-- The restriction is enforced on both frontend and backend.
-- A third booking attempt is blocked with a clear message.
-- The preferred-slot badge communicates the parent's remaining availability.
-- The final booking time comes from the selected preferred slot for that specific date.
-
-### Google Signup
-
-New Google users are asked for their **country during their first registration**.
-
-The country is stored with the user profile, while the user's IANA timezone is stored separately so timezone conversion and DST handling remain correct.
-
-Existing Google users who already have a country stored do not need to enter it again.
-
-### Current Deployment
-
-The README documents the current deployed services:
-
-- Frontend: `https://code-young-nzld.vercel.app/`
-- Admin: `https://code-young-8lim.vercel.app/`
-- Backend API: `https://codeyoung-1-paui.onrender.com/api`
-
-### Database
-
-The project uses **MongoDB Atlas**.
-
-The MongoDB Atlas connection string is configured through the backend `.env` file and must not be committed to GitHub.
-
-### Email
-
-The documentation has been updated to reflect that the project now uses **SendGrid**, not SMTP.
-
-SendGrid API credentials must remain backend-only environment variables.
-
-### README
-
-The README should provide complete setup and operational documentation covering:
-
-- Architecture
-- Live URLs
-- Frontend
-- Admin frontend
-- Backend
-- MongoDB Atlas
-- SendGrid
-- Authentication
-- Google signup
-- Country/timezone handling
-- Free-trial limits
-- Preferred slots
-- Mentor assignment
-- Default 10 mentors
-- Reminder emails
-- Environment variables
-- Local development
-- Deployment
-- API structure
-- Security
-- Troubleshooting
-
-All production secrets must remain outside the repository and be supplied through environment variables.
-
-## User -
-
-how to to deploy
-
-## AI -
-
-**1. Database**
-
-* Create a free cluster on MongoDB Atlas.
-* Add a database user, and under Network Access allow `0.0.0.0/0`.
-* Copy the connection string.
-
-**2. Backend (Render, New Web Service)**
-
-* Root directory: `backend`
-* Build command: `npm install`
-* Start command: `npm start`
-* Environment variables:
-
-```
-NODE_ENV=production
-MONGO_URI=<atlas string>
-JWT_SECRET=<long random string>
-FRONTEND_URL=<your frontend URL, no trailing slash>
-ADMIN_FRONTEND_URL=<admin URL or same as above>
-FIREBASE_PROJECT_ID=codeyoung-b618a
-RESEND_API_KEY=<key>
-EMAIL_FROM=onboarding@resend.dev
-```
-
-* After it deploys, run `npm run seed` once. Use Render's Shell tab, or run it on your laptop with `MONGO_URI` pointing to Atlas.
-
-**3. Frontend (Vercel, New Project)**
-
-* Root directory: `frontend-app`
-* Build command: `npm run build`
-* Output directory: `dist`
-* Environment variables:
-
-```
-VITE_API_BASE_URL=https://<your-backend>.onrender.com/api
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=...
-VITE_FIREBASE_PROJECT_ID=codeyoung-b618a
-VITE_FIREBASE_STORAGE_BUCKET=...
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-```
-
-* Add `frontend-app/vercel.json` with `{ "rewrites": [{ "source": "/(.*)", "destination": "/" }] }` so refreshing a page doesn't 404.
-
-**4. Connect them**
-
-* Put the real Vercel URL into `FRONTEND_URL` on Render, then redeploy the backend.
-* In the Firebase Console, go to Authentication → Settings → Authorized domains and add your Vercel domain.
-
-**5. Test**
-
-* Sign up, verify the OTP, and book a class.
-
-**Two things to do first:**
-
-* Your zip contains `.env` files with real secrets, so rotate them and set the values in the dashboards instead.
-* Change the default admin password after your first login.
