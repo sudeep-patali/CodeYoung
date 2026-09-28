@@ -2,12 +2,6 @@
 
 ## User
 
-Dear Sir/Madam,
-
-Greetings From Talentise Global!!
-
-With reference to the recruitment drive of "Codeyoung", please find below the details of the Assignment Task (For Full-Stack Development Profile) to be done, along with the shortlisted candidates list as attached from your institute.
-
 Full stack Engineer Task:
 
 At Codeyoung, parents have the option to book a "trial class" to experience our product and the quality coaching our mentors provide before signing up.
@@ -35,37 +29,188 @@ Requirements:
 4. Mentors have at most 2 demo classes a day.
 5. If no mentors are available, use your judgment to communicate an appropriate error state.
 
-Submission:
+Build a complete, professional coaching application with a well-structured **frontend, backend, and MongoDB database**. The code should be clean, modular, refactored, scalable, and follow professional software development practices.
 
-1. You are encouraged to use an AI assistant to solve this task.
-2. Submit the solution as a Github repo link which has a README.md that describes how to run the project.
-3. You should also submit a full transcript (both your prompts and agent responses) of your AI sessions. (/export in Claude code for example).
-4. Submit it as TRANSCRIPT.md in the Github repo.
-5. All the above mentioned should be submitted to the email id: campus.ka@talentiseglobal.com within 28th of September 2026 (Latest by 6:00 PM)
-6. The subject line of the assignment submission task email should be like: Codeyoung Assignment Task - <Candidate Name> - Institute Name (ABBR)
+### 1. Home Page
+Create a modern home page that:
+- Provides a brief introduction to the coaching application.
+- Clearly explains the purpose and key features of the platform.
+- Provides clear navigation options for **Login** and **Sign Up**.
+- Includes a professional and responsive UI.
 
-Evaluation:
+### 2. Authentication
+Implement authentication using both **Google OAuth** and **email/password**.
 
-1. If you have questions about edge cases or more requirements, we expect you to research Codeyoung & similar systems to understand how they solve similar cases.
-2. A good part of this evaluation is what you do & don't build.
-3. Your product should be usable. Your design sense, and how much you think from a customer PoV will be evaluated.
-4. Code-level architecture and design patterns you use, and how you guide the AI to write good, maintainable code is another pillar criterion.
+#### Google Authentication
+- Allow users to sign up and log in using their Google account.
+- Retrieve and store the user's name and email.
 
-Please Note: Shortlisted candidates are also marked in the mail.
+#### Email/Password Authentication
+- Sign-up should require:
+  - Name
+  - Email
+  - Password
+- Only **parents** can register through the public sign-up page.
+- **Mentors cannot register themselves.**
+- Mentors must be created by the **Admin**.
+- During login, users must select their role:
+  - Parent
+  - Mentor
+- Validate the selected role against the user's actual role stored in the database.
 
-Institute is requested to inform them and share the assignment task with them (from institutes end) at the earliest.
+### 3. Admin Panel
+Create a **separate frontend application** for the Admin.
 
-Thanks & Regards,
+The Admin should be able to:
+- Log in securely.
+- Add and manage mentors.
+- Create mentor accounts with the required details.
+- Edit mentor information.
+- Activate/deactivate mentors.
+- Manage application configurations.
+- View and manage users.
+- Manage scheduled classes.
+- Perform other necessary administrative operations.
 
-i want a home page,where there is a brief intro about our coaching app,
-there there will be a dotrection to login or signup. i also need signup or login through google.if email then email,name and passowrd.
-the users need to selct their role while login,and signup can only be done by parents not for the mentors.
-i need another page for admin it is sepaerate frontend who can add mentors,and have some more configurations.
-after logging in parents and mentors can login to their respective dashboard and rest in mentioned above.
-While scheduling the classes, only if the email exists, such has to be entered and confirmed, otherwise show up the error before confirming.
-before the scheduled class, another email has to be sent to the parent as a reminder email an hour prior, with the meet link.
-After login, have a dashboard showing all the prior and future classes they have scheduled.
-i need frontend backend and databse.i want to use mongodb.have a sepearte env file,make sure that the code is refactored and well striuctured like professionals.
+### 4. Parent Dashboard
+After logging in as a parent, redirect the user to the **Parent Dashboard**.
+
+The dashboard should display:
+- Upcoming scheduled classes.
+- Previous/completed classes.
+- Class date and time.
+- Mentor details.
+- Meeting/Google Meet link.
+- Class status.
+- Other relevant information.
+
+Parents should also be able to:
+- Schedule classes with available mentors.
+- View their scheduled classes.
+- Cancel or reschedule classes if permitted.
+- Access their profile and account information.
+
+### 5. Mentor Dashboard
+After logging in as a mentor, redirect the user to the **Mentor Dashboard**.
+
+The dashboard should display:
+- Upcoming classes.
+- Previous classes.
+- Parent/student details.
+- Class date and time.
+- Meeting/Google Meet link.
+- Class status.
+
+Mentors should be able to manage their assigned classes according to the application's requirements.
+
+### 6. Class Scheduling and Email Validation
+When scheduling a class:
+- The parent's email address must be entered.
+- Before the class is confirmed, verify that the email address exists in the application's database.
+- If the email does not exist, display an appropriate error message immediately and prevent the class from being confirmed.
+- Do not allow a class to be scheduled until the email has been successfully validated.
+- Store all class scheduling information in MongoDB.
+
+### 7. Class Reminder Emails
+For every confirmed class:
+- Send a reminder email to the parent **one hour before the scheduled class**.
+- The reminder email must contain:
+  - Class details
+  - Date and time
+  - Mentor details
+  - Google Meet/joining link
+- Implement this using a reliable background job/scheduler system.
+- Make sure reminder emails are not sent more than once for the same class.
+
+### 8. Time Zone Handling
+Parents and mentors may be located in different time zones, such as parents in the **US or UK** and mentors in **India**.
+
+Therefore:
+- Store scheduled times consistently in the database, preferably in UTC.
+- Display class times in the user's local time zone.
+- Clearly communicate the correct local time to both parents and mentors.
+- Ensure reminder emails are sent at the correct time based on the scheduled class time.
+
+### 9. Dashboard Class History
+After login, both parents and mentors should have access to a dashboard containing:
+- All previously completed classes.
+- All upcoming classes.
+- Cancelled classes where applicable.
+- Class details and meeting links.
+- Appropriate filtering and sorting options.
+
+### 10. Backend
+Build a secure and scalable backend with:
+- RESTful APIs.
+- Authentication and authorization.
+- Role-based access control.
+- Parent, mentor, admin, and class management.
+- MongoDB integration.
+- Proper validation and error handling.
+- Secure password hashing.
+- Secure authentication tokens/sessions.
+- Email service integration.
+- Scheduled/background jobs for reminder emails.
+
+### 11. Database
+Use **MongoDB** as the primary database.
+
+Design proper schemas/models for:
+- Users
+- Parents
+- Mentors
+- Admins
+- Classes/Schedules
+- Authentication-related data
+- Application configurations
+- Any other required entities
+
+Use appropriate indexes, relationships/references, validation, timestamps, and database best practices.
+
+### 12. Environment Variables
+Use separate `.env` files for environment-specific configuration.
+
+Do not hardcode:
+- Database credentials
+- JWT secrets
+- Google OAuth credentials
+- Email credentials
+- API keys
+- Other sensitive configuration
+
+Provide a `.env.example` file containing all required environment variables without exposing actual secrets.
+
+### 13. Code Structure
+Follow a professional and scalable project structure with:
+- Separate frontend and backend applications.
+- Modular components.
+- Reusable UI components.
+- Separate routes, controllers, services, models, middleware, utilities, and configuration files.
+- Centralized error handling.
+- Proper API response handling.
+- Clean naming conventions.
+- No duplicated code.
+- No unnecessary files or dependencies.
+- Clear separation of concerns.
+
+### 14. UI/UX
+Create a modern, responsive, professional interface for:
+- Home page
+- Login
+- Parent registration
+- Parent dashboard
+- Mentor dashboard
+- Class scheduling
+- Class history
+- Profile/settings
+- Admin dashboard
+
+The application should work properly on desktop, tablet, and mobile devices.
+
+### 15. Overall Requirement
+Build the application as a complete production-ready system with **three separate role-based experiences: Parent, Mentor, and Admin**, including authentication, authorization, scheduling, MongoDB persistence, Google authentication, email verification/validation, automated one-hour class reminders, timezone handling, dashboards, and proper frontend-backend integration.
+
+The final code should be **professional, well-refactored, maintainable, secure, scalable, and properly documented**.
 
 Make a detailed prompt for me for this also explain how each page should be
 
