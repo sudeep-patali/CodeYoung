@@ -49,7 +49,7 @@ export default function MentorDashboard() {
   return (
     <div>
       <Navbar />
-      <div className="container">
+      <div className="container dashboard-container">
         <div className="dashboard-hero">
           <div>
             <h1>

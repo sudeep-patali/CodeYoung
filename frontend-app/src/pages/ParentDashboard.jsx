@@ -52,7 +52,7 @@ export default function ParentDashboard() {
       <Navbar />
       {/* Parents who signed up with Google have no country yet - ask once. */}
       {user.needsCountry && <CountryPromptModal />}
-      <div className="container">
+      <div className="container dashboard-container">
         <div className="dashboard-hero">
           <div>
             <h1>Welcome, {user.name}</h1>
