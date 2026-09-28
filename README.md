@@ -20,8 +20,25 @@ A full-stack platform where parents book a **free trial class** (or a paid **Ful
 
 ---
 
+## 🔑 Default Accounts (Quick Login)
+
+Created by `npm run seed`. Full details are in [section 10](#-default-accounts-1).
+
+| Role | App | Email | Password |
+|------|-----|-------|----------|
+| **Admin** | https://code-young-8lim.vercel.app/ | `admin@coach.edu` | `@admin123` |
+| **Mentor** (first login) | https://code-young-nzld.vercel.app/ (choose *I am a Mentor*) | For example, `mentor1@codeyoung.dev` | Same as the email, for example `mentor1@codeyoung.dev` |
+| **Parent** | https://code-young-nzld.vercel.app/ (choose *I am a Parent*) | Sign up yourself | Chosen at signup |
+
+- Seeded mentors are `mentor1@codeyoung.dev` … `mentor10@codeyoung.dev`.
+- Mentors are forced to set a new password on first login.
+- Change the admin password right after your first login (Admin app → Settings).
+
+---
+
 ## 📑 Table of Contents
 
+0. [Default Accounts (Quick Login)](#-default-accounts-quick-login)
 1. [Features](#-features)
 2. [Tech Stack](#-tech-stack)
 3. [Project Structure](#-project-structure)
@@ -514,22 +531,37 @@ Each frontend has a `vercel.json` that sends every route to `index.html`, so ref
 
 Created by `npm run seed`:
 
-| Role | Login | Password |
-|------|-------|----------|
-| **Admin** | `admin@coach.edu` | `@admin123` |
-| **Mentors** | `mentor1@codeyoung.dev` … `mentor10@codeyoung.dev` | The mentor's own email address |
-| **Parents** | Sign up in the frontend app | Chosen at signup |
+### Admin login
 
-- **Change the admin password right after your first login** (Admin app → Settings).
-- Mentors are forced to set a new password on first login.
-- Reset a mentor's password back to the default:
-  ```bash
-  cd backend
-  node src/scripts/resetMentorPassword.js mentor1@codeyoung.dev
-  node src/scripts/resetMentorPassword.js --all
-  ```
+| Field | Value |
+|-------|-------|
+| **App** | https://code-young-8lim.vercel.app/ |
+| **Email** | `admin@coach.edu` |
+| **Password** | `@admin123` |
 
-Log in to the admin app at https://code-young-8lim.vercel.app/ and the parent/mentor app at https://code-young-nzld.vercel.app/ (choose *I am a Parent* or *I am a Mentor*).
+Change this password right after your first login (Admin app → Settings).
+
+### Mentor login (first time)
+
+| Field | Value |
+|-------|-------|
+| **App** | https://code-young-nzld.vercel.app/ (choose *I am a Mentor*) |
+| **Email** | For example, `mentor1@codeyoung.dev` |
+| **First-time password** | The same as the email, for example `mentor1@codeyoung.dev` |
+
+Seeded mentors are `mentor1@codeyoung.dev` … `mentor10@codeyoung.dev`. Each one's first password is their own email address. On first login the mentor is forced to set a new password.
+
+### Parent login
+
+Parents sign up themselves in the frontend app (email + password with a 4-digit code, or Google) and log in with the password they chose.
+
+### Resetting a mentor's password
+
+```bash
+cd backend
+node src/scripts/resetMentorPassword.js mentor1@codeyoung.dev
+node src/scripts/resetMentorPassword.js --all
+```
 
 ---
 
