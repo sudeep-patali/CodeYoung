@@ -1,21 +1,22 @@
-const { AdminConfig } = require('../models');
-const { localToUTC } = require('../utils/timezone');
-const { findBestMentor } = require('./matchingService');
+const { AdminConfig, MentorProfile, Booking } = require('../models');
+const { localToUTC, localDateString } = require('../utils/timezone');
 
 /**
  * Given a calendar date and IANA timezone (the parent's), returns the list
  * of slot start times on that date, in that timezone, for which at least
- * one mentor is currently available. Slot times are generated across the
- * platform's configured business-hours window and slot duration, then each
- * candidate slot is checked against the real matching logic so parents
- * never see a slot that isn't actually bookable.
+ * one mentor is currently available.
  *
- * Because business hours in this simple model are a single global window
- * (see AdminConfig), and mentors are all in Asia/Kolkata while parents are
- * usually in US/UK, most of the *parent's* business hours window will
- * naturally surface the mentor-side evening/morning overlap - the timezone
- * conversion itself (not a second set of "regional" business hours) is
- * what makes the overlap correct across DST changes.
+ * PERFORMANCE: the previous version called findBestMentor() once per slot,
+ * and each call re-queried config, mentors and per-mentor bookings - on the
+ * order of hundreds of sequential DB round trips per request (40-50s on a
+ * remote Atlas cluster). This version loads config, active mentors and all
+ * relevant confirmed bookings ONCE, then evaluates every slot in memory
+ * using exactly the same eligibility rules as matchingService.findBestMentor:
+ *   (a) active mentor with an active user account
+ *   (b) not inside one of the mentor's explicit unavailable blocks
+ *   (c) no confirmed booking at that exact start time
+ *   (d) fewer than the max classes/day on the mentor's own local date
+ * Keep these rules in sync with matchingService.findBestMentor.
  */
 async function getAvailableSlots({ dateStr, ianaZone }) {
   const config = await AdminConfig.getSingleton();
@@ -26,32 +27,90 @@ async function getAvailableSlots({ dateStr, ianaZone }) {
     return { slots: [], blackout: true };
   }
 
-  const slots = [];
+  // 1. Build candidate slots (no DB access).
+  const candidates = [];
+  const now = Date.now();
   for (let hour = startHour; hour < endHour; hour++) {
     for (let minute = 0; minute < 60; minute += slotDurationMinutes) {
       const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
       let startTimeUTC;
       try {
-        // Skip local times that don't exist (spring-forward DST gap) -
-        // luxon marks these invalid rather than silently shifting them.
+        // Skip local times that don't exist (spring-forward DST gap).
         startTimeUTC = localToUTC(dateStr, timeStr, ianaZone);
       } catch {
         continue;
       }
+      if (startTimeUTC.getTime() < now) continue; // already passed
       const endTimeUTC = new Date(startTimeUTC.getTime() + slotDurationMinutes * 60000);
+      candidates.push({ timeStr, startTimeUTC, endTimeUTC });
+    }
+  }
+  if (candidates.length === 0) return { slots: [], blackout: false };
 
-      // Don't offer slots that have already passed.
-      if (startTimeUTC.getTime() < Date.now()) continue;
+  // 2. Load active mentors once.
+  const profiles = (await MentorProfile.find({ active: true }).populate('userId')).filter(
+    (mp) => mp.userId && mp.userId.active
+  );
+  if (profiles.length === 0) return { slots: [], blackout: false };
 
-      const match = await findBestMentor({ startTimeUTC, endTimeUTC });
-      if (match) {
-        slots.push({
-          timeStr,
-          startTimeUTC,
-          endTimeUTC,
-          availableMentorCount: undefined, // intentionally not leaking mentor identity/count pre-booking
-        });
-      }
+  const mentorIds = profiles.map((p) => p.userId._id);
+
+  // Every (mentor-local date) any candidate slot could fall on.
+  const localDates = new Set();
+  for (const p of profiles) {
+    for (const c of candidates) {
+      localDates.add(localDateString(c.startTimeUTC, p.userId.timezone));
+    }
+  }
+  const minStart = candidates[0].startTimeUTC;
+  const maxStart = candidates[candidates.length - 1].startTimeUTC;
+
+  // 3. One bookings query covering both the per-day counts and the exact
+  //    start-time conflicts.
+  const bookings = await Booking.find({
+    mentorId: { $in: mentorIds },
+    status: 'confirmed',
+    $or: [
+      { mentorLocalDate: { $in: [...localDates] } },
+      { startTimeUTC: { $gte: minStart, $lte: maxStart } },
+    ],
+  })
+    .select('mentorId mentorLocalDate startTimeUTC')
+    .lean();
+
+  const dayCount = new Map(); // `${mentorId}|${localDate}` -> confirmed count
+  const conflicts = new Set(); // `${mentorId}|${startMs}`
+  for (const b of bookings) {
+    const dayKey = `${b.mentorId}|${b.mentorLocalDate}`;
+    dayCount.set(dayKey, (dayCount.get(dayKey) || 0) + 1);
+    conflicts.add(`${b.mentorId}|${new Date(b.startTimeUTC).getTime()}`);
+  }
+
+  // 4. Evaluate every slot in memory.
+  const slots = [];
+  for (const { timeStr, startTimeUTC, endTimeUTC } of candidates) {
+    const startMs = startTimeUTC.getTime();
+    const hasMentor = profiles.some((profile) => {
+      const mentor = profile.userId;
+      const blocked = (profile.unavailableSlots || []).some(
+        (block) => startTimeUTC < block.endUTC && endTimeUTC > block.startUTC
+      );
+      if (blocked) return false;
+      if (conflicts.has(`${mentor._id}|${startMs}`)) return false;
+
+      const mentorLocalDate = localDateString(startTimeUTC, mentor.timezone);
+      const booked = dayCount.get(`${mentor._id}|${mentorLocalDate}`) || 0;
+      const maxPerDay = profile.maxClassesPerDay ?? config.defaultMaxClassesPerDay;
+      return booked < maxPerDay;
+    });
+
+    if (hasMentor) {
+      slots.push({
+        timeStr,
+        startTimeUTC,
+        endTimeUTC,
+        availableMentorCount: undefined, // intentionally not leaking mentor identity/count pre-booking
+      });
     }
   }
 
