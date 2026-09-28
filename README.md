@@ -1,190 +1,642 @@
 # CodeYoung Trial Class Booking System
 
-A full-stack trial-class booking system for CodeYoung. Parents book a free trial class,
-get auto-matched with an available mentor, and both parties receive an email with a
-meeting link. All times are handled correctly across timezones and DST.
+A full-stack platform where parents book a **free trial class** (or a paid **Full Coaching** session), get automatically matched with an available mentor, and both sides receive a confirmation email with a meeting link. Every time is stored in UTC and shown in each person's own timezone, DST included.
 
-## Repo layout
+---
+
+## 🌐 Live Deployments
+
+| Part | What it is | URL |
+|------|------------|-----|
+| **Frontend App** | Parent + Mentor web app | https://code-young-nzld.vercel.app/ |
+| **Admin App** | Admin dashboard | https://code-young-8lim.vercel.app/ |
+| **Backend API** | Express REST API (Render) | https://codeyoung-1-paui.onrender.com/api |
+| **Health check** | Quick "is the API up?" test | https://codeyoung-1-paui.onrender.com/api/health |
+
+**Database:** MongoDB Atlas (connected through the `MONGO_URI` connection string).
+**Emails:** SendGrid (HTTPS API). SMTP is **not** used.
+
+> The backend runs on Render's free tier, which goes to sleep when idle. The first request after a quiet period can take 30–60 seconds. That is normal.
+
+---
+
+## 📑 Table of Contents
+
+1. [Features](#-features)
+2. [Tech Stack](#-tech-stack)
+3. [Project Structure](#-project-structure)
+4. [How the Pieces Connect](#-how-the-pieces-connect)
+5. [Requirements](#-requirements)
+6. [Environment Variables](#-environment-variables)
+   - [Backend `.env`](#61-backend-backendenv)
+   - [Frontend App `.env`](#62-frontend-app-frontend-appenv)
+   - [Admin App `.env`](#63-admin-app-frontend-adminenv)
+7. [Running Locally](#-running-locally)
+8. [Third-Party Setup](#-third-party-setup)
+   - [MongoDB Atlas](#81-mongodb-atlas)
+   - [SendGrid (emails)](#82-sendgrid-emails)
+   - [Firebase (Google sign-in)](#83-firebase-google-sign-in)
+9. [Deployment](#-deployment)
+10. [Default Accounts](#-default-accounts)
+11. [Booking Rules](#-booking-rules)
+12. [API Reference](#-api-reference)
+13. [NPM Scripts](#-npm-scripts)
+14. [Troubleshooting](#-troubleshooting)
+15. [Security Notes](#-security-notes)
+
+---
+
+## ✨ Features
+
+**Parents**
+- Sign up with email + password (verified by a 4-digit email code) or with Google.
+- Google sign-up parents are asked for their **country** the first time they open the dashboard.
+- Book a **Free Trial** or **Full Coaching** session.
+- If the chosen time has no mentor, the system books the **nearest open slot** that day and tells the parent.
+- See upcoming and past bookings, and cancel upcoming ones.
+
+**Mentors**
+- Accounts are created by the admin (never self-signup).
+- Must change the temporary password on first login.
+- See their assigned classes in their own timezone.
+
+**Admin**
+- Separate login and separate app.
+- Create and manage mentors, view all bookings, see stats.
+- Change platform settings: free trials per family, slot length, business hours, blackout dates, and more.
+
+**System**
+- Automatic mentor matching with load balancing.
+- Confirmation emails to both parent and mentor, plus a reminder email before class (runs every minute).
+- Times are always shown in the viewer's own timezone.
+
+---
+
+## 🧰 Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Node.js, Express 4, Mongoose 8 (MongoDB), Zod validation, JWT in an httpOnly cookie, node-cron |
+| Time handling | Luxon (IANA timezones) |
+| Email | SendGrid HTTPS API (Nodemailer only as an optional SMTP fallback) |
+| Google sign-in | Firebase Auth on the frontend; the backend verifies tokens with `jsonwebtoken` + `jwks-rsa` (no service account) |
+| Frontends | React 18, React Router 6, Vite 5, Axios, lucide-react |
+| Hosting | Render (backend), Vercel (both frontends), MongoDB Atlas (database) |
+
+---
+
+## 📁 Project Structure
 
 ```
-codeyoung-booking/
-├── backend/           Express + MongoDB API
-├── frontend-app/      Parent + mentor facing React app (port 5173)
-└── frontend-admin/    Admin React app (port 5174)
+codeyoung/
+├── backend/                     Express + MongoDB API
+│   ├── src/
+│   │   ├── config/              env.js, db.js, googleAuth.js
+│   │   ├── controllers/         Request handlers
+│   │   ├── middleware/          authGuard, roleGuard, validate, errorHandler
+│   │   ├── models/              User, MentorProfile, Booking, AdminConfig, EmailOtp
+│   │   ├── routes/              auth, bookings, mentors, admin
+│   │   ├── services/            booking, matching, availability, auth, email, ...
+│   │   ├── jobs/                reminderJob.js (cron)
+│   │   ├── scripts/             seed.js, resetMentorPassword.js
+│   │   ├── utils/               timezone, schemas, constants, ...
+│   │   ├── app.js               Express app (CORS, routes)
+│   │   └── server.js            Entry point
+│   ├── .env.example
+│   └── package.json
+├── frontend-app/                Parent + Mentor React app (port 5173)
+│   ├── src/                     components, pages, context, services, utils, config
+│   ├── .env.example
+│   └── vercel.json
+├── frontend-admin/              Admin React app (port 5174)
+│   ├── src/
+│   ├── .env.example
+│   └── vercel.json
+└── README.md
 ```
 
-## Prerequisites
+---
 
-- Node.js 18+
-- A MongoDB instance (local `mongod` or a free MongoDB Atlas cluster)
+## 🔌 How the Pieces Connect
 
-## 1. Backend setup
+```
+   Parent / Mentor browser                    Admin browser
+ https://code-young-nzld.vercel.app     https://code-young-8lim.vercel.app
+              │                                     │
+              └───────────────┬─────────────────────┘
+                              │  HTTPS + cookies (VITE_API_BASE_URL)
+                              ▼
+              https://codeyoung-1-paui.onrender.com/api   ← Backend (Render)
+                    │                    │                    │
+                    ▼                    ▼                    ▼
+              MongoDB Atlas          SendGrid API      Google public keys
+              (MONGO_URI)        (SENDGRID_API_KEY)   (verify Google sign-in)
+```
+
+The backend only accepts browser requests from the two frontend URLs (CORS). These are set with `FRONTEND_URL` and `ADMIN_FRONTEND_URL`.
+
+---
+
+## ✅ Requirements
+
+### Software
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Node.js | **18 or newer** | Needed for the built-in `fetch` used by the SendGrid call |
+| npm | 9 or newer | Comes with Node |
+| Git | any | For cloning and deploying |
+
+### Accounts and services
+
+| Service | Needed for | Required? |
+|---------|-----------|-----------|
+| MongoDB Atlas | Database | Yes |
+| SendGrid | Sending emails | Yes (without it, emails are only printed to the server log) |
+| Firebase project | "Continue with Google" | Optional (password login works without it) |
+| Render | Hosting the backend | For deployment |
+| Vercel | Hosting the two frontends | For deployment |
+
+### Package dependencies (installed automatically by `npm install`)
+
+**Backend** (`backend/package.json`)
+
+| Package | Purpose |
+|---------|---------|
+| `express` | Web server |
+| `mongoose` | MongoDB models |
+| `cors`, `cookie-parser` | CORS and cookies |
+| `jsonwebtoken`, `jwks-rsa` | Login tokens and Google token verification |
+| `bcryptjs` | Password hashing |
+| `zod` | Request validation |
+| `luxon` | Timezone and DST handling |
+| `node-cron` | Reminder email job |
+| `nodemailer` | Optional SMTP fallback |
+| `uuid` | Meeting link ids |
+| `dotenv` | Loads `.env` |
+| `nodemon` (dev) | Auto-restart in development |
+
+**Frontend App** (`frontend-app/package.json`): `react`, `react-dom`, `react-router-dom`, `axios`, `firebase`, `luxon`, `lucide-react`, plus `vite` and `@vitejs/plugin-react` (dev).
+
+**Admin App** (`frontend-admin/package.json`): `react`, `react-dom`, `react-router-dom`, `axios`, `luxon`, `lucide-react`, plus `vite` and `@vitejs/plugin-react` (dev).
+
+---
+
+## 🔐 Environment Variables
+
+Each of the three projects has its own `.env` file. **Never commit `.env` files.** They are already listed in `.gitignore`. Each project has a `.env.example` you can copy.
+
+> **Vite note (both frontends):** variables are baked in when the app is **built**. On Vercel, after you change an environment variable you must **redeploy** for it to take effect.
+
+### 6.1 Backend (`backend/.env`)
+
+**Production values** (what you set in Render → Environment):
+
+```env
+# ---------- Server ----------
+PORT=5000
+NODE_ENV=production
+
+# ---------- Database (MongoDB Atlas) ----------
+# Replace the placeholders with your own Atlas values (see section 8.1).
+# The database name "codeyoung" goes right before the "?".
+MONGO_URI=mongodb+srv://<db_user>:<db_password>@<cluster-host>/codeyoung?retryWrites=true&w=majority
+
+# ---------- Auth ----------
+# Any long random string. Generate one with:
+#   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+JWT_SECRET=<long-random-string>
+JWT_EXPIRY=7d
+
+# ---------- Google sign-in (Firebase) ----------
+# Not a secret. Must match the projectId used in the frontend.
+FIREBASE_PROJECT_ID=codeyoung-b618a
+
+# ---------- Email (SendGrid) ----------
+SENDGRID_API_KEY=<your-sendgrid-api-key>
+# Must be a sender you verified in SendGrid (section 8.2)
+EMAIL_FROM=<your-verified-sender@example.com>
+
+# Leave these EMPTY. Not used with SendGrid.
+RESEND_API_KEY=
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+
+# ---------- Allowed frontends (CORS) ----------
+# No trailing slash!
+FRONTEND_URL=https://code-young-nzld.vercel.app
+ADMIN_FRONTEND_URL=https://code-young-8lim.vercel.app
+
+# ---------- Booking defaults ----------
+REMINDER_LEAD_TIME_MINUTES=60
+DEFAULT_MAX_CLASSES_PER_MENTOR_PER_DAY=2
+SLOT_DURATION_MINUTES=30
+
+# ---------- Signup email code (OTP) ----------
+SIGNUP_OTP_EXPIRY_MINUTES=10
+SIGNUP_OTP_RESEND_COOLDOWN_SECONDS=60
+SIGNUP_OTP_MAX_ATTEMPTS=5
+
+# ---------- Seeding ----------
+# Ignored in production. Use "npm run seed" instead (section 7).
+AUTO_SEED_ON_STARTUP=false
+```
+
+**Local development values** (what you put in `backend/.env` on your computer):
+
+```env
+PORT=5000
+NODE_ENV=development
+MONGO_URI=mongodb://localhost:27017/codeyoung      # or your Atlas string
+JWT_SECRET=any-long-random-string
+JWT_EXPIRY=7d
+FIREBASE_PROJECT_ID=codeyoung-b618a
+SENDGRID_API_KEY=                                  # blank = emails are printed in the terminal
+EMAIL_FROM=<your-verified-sender@example.com>
+FRONTEND_URL=http://localhost:5173
+ADMIN_FRONTEND_URL=http://localhost:5174
+AUTO_SEED_ON_STARTUP=true
+```
+
+**Every backend variable explained**
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PORT` | No | `5000` | Port the API listens on (Render sets this itself) |
+| `NODE_ENV` | Yes in production | `development` | `production` turns on secure, cross-site cookies and disables auto-seeding |
+| `MONGO_URI` | **Yes** | local MongoDB | MongoDB Atlas connection string |
+| `JWT_SECRET` | **Yes** | `dev-secret-change-me` | Secret that signs login tokens. Always change it |
+| `JWT_EXPIRY` | No | `7d` | How long a login lasts |
+| `FIREBASE_PROJECT_ID` | For Google login | `codeyoung-b618a` | Firebase project id (public) |
+| `SENDGRID_API_KEY` | **Yes** for real emails | empty | SendGrid API key |
+| `EMAIL_FROM` | **Yes** for real emails | `noreply@codeyoung.example` | "From" address, must be verified in SendGrid |
+| `RESEND_API_KEY` | No | empty | **Keep empty.** If set, it is used *instead of* SendGrid |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_SERVICE` | No | empty | Old SMTP fallback. **Leave empty.** Only used if neither API key is set |
+| `FRONTEND_URL` | **Yes** | `http://localhost:5173` | Exact URL of the parent/mentor app (CORS) |
+| `ADMIN_FRONTEND_URL` | **Yes** | `http://localhost:5174` | Exact URL of the admin app (CORS) |
+| `REMINDER_LEAD_TIME_MINUTES` | No | `60` | How long before class the reminder is sent |
+| `DEFAULT_MAX_CLASSES_PER_MENTOR_PER_DAY` | No | `2` | Default daily class limit per mentor |
+| `SLOT_DURATION_MINUTES` | No | `30` | Length of one class slot |
+| `SIGNUP_OTP_EXPIRY_MINUTES` | No | `10` | How long the signup code stays valid |
+| `SIGNUP_OTP_RESEND_COOLDOWN_SECONDS` | No | `60` | Wait time between "resend code" requests |
+| `SIGNUP_OTP_MAX_ATTEMPTS` | No | `5` | Wrong-code attempts before a new code is needed |
+| `AUTO_SEED_ON_STARTUP` | No | `false` | Auto-run the seed on start (development only) |
+
+**How the email provider is chosen** (in `emailService.js`, first match wins):
+
+1. `RESEND_API_KEY` is set → Resend
+2. `SENDGRID_API_KEY` is set → **SendGrid** ✅
+3. `SMTP_SERVICE` or `SMTP_HOST` is set → SMTP
+4. Nothing set → emails are only printed in the server log
+
+Because you use SendGrid, make sure `RESEND_API_KEY` is **empty or removed**.
+
+### 6.2 Frontend App (`frontend-app/.env`)
+
+**Production** (Vercel → project `code-young-nzld` → Settings → Environment Variables):
+
+```env
+VITE_API_BASE_URL=https://codeyoung-1-paui.onrender.com/api
+
+# Firebase web config (public values, safe in the browser bundle)
+VITE_FIREBASE_API_KEY=<from Firebase console>
+VITE_FIREBASE_AUTH_DOMAIN=<your-project>.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=codeyoung-b618a
+VITE_FIREBASE_STORAGE_BUCKET=<your-project>.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=<from Firebase console>
+VITE_FIREBASE_APP_ID=<from Firebase console>
+```
+
+**Local development:**
+
+```env
+VITE_API_BASE_URL=http://localhost:5000/api
+# Firebase values same as above (or leave blank to disable the Google button)
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_API_BASE_URL` | **Yes** | Backend URL **including `/api`** |
+| `VITE_FIREBASE_API_KEY` | For Google login | Firebase web API key |
+| `VITE_FIREBASE_AUTH_DOMAIN` | For Google login | Firebase auth domain |
+| `VITE_FIREBASE_PROJECT_ID` | For Google login | Must equal the backend's `FIREBASE_PROJECT_ID` |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Optional | Firebase storage bucket |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Optional | Firebase sender id |
+| `VITE_FIREBASE_APP_ID` | For Google login | Firebase app id |
+
+If `VITE_FIREBASE_API_KEY` and `VITE_FIREBASE_APP_ID` are missing, the Google button shows as disabled and password login still works.
+
+### 6.3 Admin App (`frontend-admin/.env`)
+
+**Production** (Vercel → project `code-young-8lim` → Settings → Environment Variables):
+
+```env
+VITE_API_BASE_URL=https://codeyoung-1-paui.onrender.com/api
+```
+
+**Local development:**
+
+```env
+VITE_API_BASE_URL=http://localhost:5000/api
+```
+
+The admin app needs only this one variable.
+
+---
+
+## 🚀 Running Locally
+
+Run all three parts in **three separate terminals**. Start the backend first.
+
+### Step 0: Get the code
+
+```bash
+git clone <your-repo-url> codeyoung
+cd codeyoung
+```
+
+### Step 1: Backend (http://localhost:5000)
 
 ```bash
 cd backend
-cp .env.example .env
-# edit .env: at minimum set MONGO_URI to your MongoDB connection string.
-# SMTP_* can be left blank in development — emails will be logged to the
-# console instead of actually sent (see src/services/emailService.js).
-# To actually send emails without a personal Gmail account, see
-# "Sending real emails" below.
+cp .env.example .env        # Windows PowerShell: copy .env.example .env
+# Open .env and fill in at least MONGO_URI and JWT_SECRET (see section 6.1)
 npm install
-npm run seed      # creates 1 admin + 10 mentors (idempotent, safe to re-run)
-npm run dev        # starts the API on http://localhost:5000
+npm run seed                # creates the admin, 10 mentors and default settings (safe to re-run)
+npm run dev                 # starts the API with auto-restart
 ```
 
-**Default seeded accounts** (see `src/scripts/seed.js`):
-- Admin: `admin@coach.edu` / `@admin123` — change this after first login from the
-  admin app's **Settings** page (calls `PATCH /api/auth/change-password`, which
-  works for any role).
-- Mentors: `mentor1@codeyoung.dev` … `mentor10@codeyoung.dev` (10 mentors seeded
-  by default), password is the mentor's own email address (e.g. logging in as
-  `mentor1@codeyoung.dev` uses `mentor1@codeyoung.dev` as the password too). This
-  is also how the admin "create mentor" flow sets each new mentor's temp password.
-  Mentor accounts are flagged `mustResetPassword: true` — a "force password change
-  on first login" UI flow is a good next addition but isn't wired into the
-  frontend in this build.
-  Each mentor can take up to `defaultMaxClassesPerDay` (2, by default — see
-  `AdminConfig`) trial classes per calendar day, configurable per-mentor or
-  platform-wide from the admin app.
+You should see `[db] connected to MongoDB` and `[server] CodeYoung backend listening on port 5000`.
+Check it at http://localhost:5000/api/health, which should return `{"success":true,"status":"ok"}`.
 
-**Free trial limit**: every booking in this system is a free trial class, and
-each parent account gets exactly one, ever. This is enforced server-side
-(`User.freeTrialUsed`, checked in `bookingService.createBooking`) — not just
-hidden in the UI — and is set the moment a booking is confirmed, so cancelling
-a used trial does not free up another one. The parent dashboard reflects this
-by disabling/hiding the booking flow once the flag is set.
+For a one-off run without auto-restart, use `npm start`.
 
-If `AUTO_SEED_ON_STARTUP=true` in `.env`, the seed also runs once automatically
-whenever `npm run dev`/`npm start` boots in development. It's idempotent (upserts
-by email) and is hard-disabled in production regardless of this flag.
-
-### Sending real emails (no personal Gmail/app password needed)
-
-By default, with `SMTP_*` left blank, emails are just logged to the console
-(dev/dummy mode) — nothing is actually sent. To have the app send real
-confirmation, reminder, and mentor-invite emails, `emailService.js` talks to
-any generic SMTP server, so you can plug in a free transactional email
-provider instead of a personal inbox. **Resend** is the easiest:
-
-1. Sign up free at [resend.com](https://resend.com) (no credit card required).
-2. Dashboard → **API Keys** → **Create API Key**.
-3. In `backend/.env`, set:
-   ```
-   SMTP_HOST=smtp.resend.com
-   SMTP_PORT=465
-   SMTP_USER=resend
-   SMTP_PASS=re_your_api_key_here
-   EMAIL_FROM=onboarding@resend.dev
-   ```
-   `onboarding@resend.dev` works out of the box for testing (100 emails/day,
-   3,000/month, free). To send from your own domain later, verify it under
-   Dashboard → **Domains**, then set `EMAIL_FROM` to an address on that domain.
-4. Restart the backend (`npm run dev`). Booking confirmations, class
-   reminders, and mentor invites will now actually be delivered.
-
-No code changes are required — this just fills in the existing generic SMTP
-branch in `getTransporter()` (`backend/src/services/emailService.js`), the
-same one used for the Gmail-app-password path, just with different
-credentials.
-
-## 2. Parent/mentor frontend setup
+### Step 2: Frontend App (http://localhost:5173)
 
 ```bash
 cd frontend-app
-cp .env.example .env
-# edit .env (or src/config/firebase.js) with your Firebase web config if you
-# want "Continue with Google" to work. Without it, the Google button renders
-# as a disabled placeholder. See "Firebase Google sign-in setup" below.
+cp .env.example .env        # Windows PowerShell: copy .env.example .env
+# Set VITE_API_BASE_URL=http://localhost:5000/api (and Firebase values if you want Google login)
 npm install
-npm run dev        # http://localhost:5173
+npm run dev
 ```
 
-## 3. Admin frontend setup
+### Step 3: Admin App (http://localhost:5174)
 
 ```bash
 cd frontend-admin
-cp .env.example .env
+cp .env.example .env        # Windows PowerShell: copy .env.example .env
+# Set VITE_API_BASE_URL=http://localhost:5000/api
 npm install
-npm run dev        # http://localhost:5174
+npm run dev
 ```
 
-Log in at `http://localhost:5174/login` with the seeded admin credentials above.
+Log in at http://localhost:5174/login with the seeded admin account (see [Default Accounts](#-default-accounts)).
 
-## Firebase Google sign-in setup (optional)
+### Building for production (optional check)
 
-"Continue with Google" (login + signup, parent accounts only) is powered by
-Firebase Auth. Without this configured, the button just renders disabled —
-password login/signup still works fine. **No service account or private key
-is needed anywhere** — the backend verifies the token's signature directly
-against Google's public keys.
+```bash
+cd frontend-app   && npm run build && npm run preview
+cd frontend-admin && npm run build && npm run preview
+```
 
-**Frontend (public config — safe to expose in the built bundle):**
-1. [Firebase Console](https://console.firebase.google.com) → your project
-   (`codeyoung-b618a`, or create one) → Project Settings → General → "Your
-   apps" → add/open a Web app → copy the `firebaseConfig` object.
-2. Paste the values into `frontend-app/src/config/firebase.js` directly, or
-   into `frontend-app/.env` as `VITE_FIREBASE_*` (either works — env vars
-   take priority if both are set).
-3. In Firebase Console → Authentication → Sign-in method, enable the
-   **Google** provider.
-4. In Authentication → Settings → Authorized domains, make sure
-   `localhost` is listed (it is by default).
+---
 
-**Backend (also not secret — just the project ID):**
-1. Set `FIREBASE_PROJECT_ID` in `backend/.env` to the same `projectId` used
-   in the frontend's `firebaseConfig` (defaults to `codeyoung-b618a` already).
-2. That's it. `backend/src/config/googleAuth.js` verifies the Firebase ID
-   token's signature directly against Google's JWKS endpoint
-   (`https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com`)
-   using `jsonwebtoken` + `jwks-rsa`, checking issuer/audience against your
-   project ID — no `firebase-admin`, no service account, no private key
-   anywhere in this flow. `authService.js` and everything downstream is
-   unchanged since it consumes the same `{ googleId, email, name,
-   emailVerified }` shape either way.
+## 🔧 Third-Party Setup
 
-## How timezones/DST are handled
+### 8.1 MongoDB Atlas
 
-Every timestamp is stored in UTC in MongoDB. Conversion to a person's local time
-happens only at the display layer (API responses) and the email layer, always via
-their stored **IANA timezone identifier** (e.g. `Asia/Kolkata`, `America/New_York`),
-never a fixed UTC offset. This is what makes DST transitions "just work" — see
-`backend/src/utils/timezone.js`, which is the single shared module both the API and
-the email templates use. The mentor's own local calendar date (not UTC, not the
-parent's date) is precomputed and stored on each `Booking` (`mentorLocalDate`) so the
-"max 2 classes per mentor per day" rule is always counted correctly.
+1. Create a free cluster at https://www.mongodb.com/atlas.
+2. **Database Access** → *Add New Database User* → choose a username and password. Give it read/write access.
+3. **Network Access** → *Add IP Address*. Render uses changing IPs, so allow `0.0.0.0/0` (anywhere). This is safe as long as your database user password is strong.
+4. **Database** → *Connect* → *Drivers* → copy the connection string:
+   ```
+   mongodb+srv://<db_user>:<db_password>@<cluster-host>/?retryWrites=true&w=majority
+   ```
+5. Add the database name `codeyoung` before the `?` and paste it into `MONGO_URI`:
+   ```
+   mongodb+srv://<db_user>:<db_password>@<cluster-host>/codeyoung?retryWrites=true&w=majority
+   ```
+6. If your password contains special characters (`@ : / ? # %`), URL-encode them (for example `@` becomes `%40`).
 
-## Architecture notes
+Collections are created automatically the first time the app runs.
 
-- Backend follows routes → controllers → services → models, with a centralized error
-  handler and zod validation at the route boundary (see `backend/src/middleware`,
-  `backend/src/utils/schemas.js`).
-- The mentor-matching algorithm (`backend/src/services/matchingService.js`) filters
-  for active mentors under their daily cap with no slot conflict, then load-balances
-  by picking whichever eligible mentor has the fewest bookings that day.
-- Signup can only ever create `parent` accounts — the backend never reads a `role`
-  field from the signup request body at all, so a client can't force-create a mentor
-  or admin account regardless of what it sends.
-- Mentor accounts are only created by an admin (`POST /api/admin/mentors`), which
-  also sends an invite email with a temp password.
-- Admin has its own login endpoint (`POST /api/auth/admin-login`) with no
-  parent/mentor role toggle, since admin accounts are pre-seeded and never
-  self-registered.
+### 8.2 SendGrid (emails)
 
-## Known limitations / good next steps
+1. Sign up at https://sendgrid.com.
+2. **Verify a sender.** Go to *Settings → Sender Authentication → Single Sender Verification*, add the email address you want to send from, and click the link in the verification email. (No domain is needed.)
+3. **Create an API key.** Go to *Settings → API Keys → Create API Key* and choose at least **Mail Send** permission. Copy the key. SendGrid shows it only once.
+4. Set these in the backend environment:
+   ```env
+   SENDGRID_API_KEY=<your key>
+   EMAIL_FROM=<the exact address you verified in step 2>
+   ```
+5. Make sure `RESEND_API_KEY` and all `SMTP_*` values are empty.
+6. Restart or redeploy the backend.
 
-- No live database was available in the environment this was built in, so the
-  backend was verified via syntax checks, a clean `npm install`, a successful
-  `require()` of the full app graph, and standalone unit tests of the DST/timezone
-  logic — but not yet exercised against a running MongoDB instance end-to-end.
-  Run `npm run seed` then exercise the booking flow manually against your own
-  MongoDB before relying on this in production.
-- Mentor "mark myself unavailable" UI is not built (the `unavailableSlots` field
-  and matching-service check for it already exist on the backend).
-- Password reset / forgot-password flow is not implemented (optional stretch
-  per the spec).
-- "Force password reset on first login" UI is not implemented for mentors;
-  they can log in with their email-as-password indefinitely. The backend
-  already supports `PATCH /api/auth/change-password` for any role, so this
-  is just a matter of adding a "change password" form to the mentor
-  dashboard that's shown/required when `mustResetPassword` is `true`.
+**What emails get sent:** signup verification code, booking confirmation (to parent and mentor), class reminder, and mentor invite.
+
+**Important:** `EMAIL_FROM` must match the verified sender exactly, or SendGrid rejects the email. If an email doesn't arrive, check the spam folder and the *Activity* page in the SendGrid dashboard.
+
+### 8.3 Firebase (Google sign-in)
+
+Optional. Password login works without it.
+
+1. Go to https://console.firebase.google.com and open (or create) your project.
+2. **Authentication → Sign-in method** → enable **Google**.
+3. **Project Settings → General → Your apps** → add a **Web app** and copy the config values into the frontend `VITE_FIREBASE_*` variables.
+4. **Authentication → Settings → Authorized domains** → add both:
+   - `code-young-nzld.vercel.app`
+   - `localhost` (already there by default)
+5. Set `FIREBASE_PROJECT_ID` in the backend to the same project id.
+
+No service account or private key is required anywhere.
+
+---
+
+## ☁️ Deployment
+
+### Backend on Render
+
+| Setting | Value |
+|---------|-------|
+| Service type | Web Service |
+| Root Directory | `backend` |
+| Build Command | `npm install` |
+| Start Command | `npm start` |
+| Environment | Add every variable from [section 6.1](#61-backend-backendenv) |
+
+After the first deploy, **seed the database once** because auto-seeding is disabled in production. On your own computer, with `backend/.env` pointing at your Atlas database:
+
+```bash
+cd backend
+npm run seed
+```
+
+### Frontend App on Vercel
+
+| Setting | Value |
+|---------|-------|
+| Root Directory | `frontend-app` |
+| Framework Preset | Vite |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Environment | Variables from [section 6.2](#62-frontend-app-frontend-appenv) |
+
+### Admin App on Vercel
+
+| Setting | Value |
+|---------|-------|
+| Root Directory | `frontend-admin` |
+| Framework Preset | Vite |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Environment | Variables from [section 6.3](#63-admin-app-frontend-adminenv) |
+
+Each frontend has a `vercel.json` that sends every route to `index.html`, so refreshing on any page works.
+
+### Deployment checklist
+
+- [ ] Atlas: database user created and network access allows Render
+- [ ] Render: all backend variables set, `NODE_ENV=production`
+- [ ] Render: `FRONTEND_URL` and `ADMIN_FRONTEND_URL` match the Vercel URLs exactly (no trailing slash)
+- [ ] Render: `SENDGRID_API_KEY` and `EMAIL_FROM` set, `RESEND_API_KEY` empty
+- [ ] Vercel (both apps): `VITE_API_BASE_URL` points to the Render URL ending in `/api`
+- [ ] Firebase: Vercel domain added to Authorized domains
+- [ ] `npm run seed` run once against Atlas
+- [ ] https://codeyoung-1-paui.onrender.com/api/health returns `ok`
+
+---
+
+## 👤 Default Accounts
+
+Created by `npm run seed`:
+
+| Role | Login | Password |
+|------|-------|----------|
+| **Admin** | `admin@coach.edu` | `@admin123` |
+| **Mentors** | `mentor1@codeyoung.dev` … `mentor10@codeyoung.dev` | The mentor's own email address |
+| **Parents** | Sign up in the frontend app | Chosen at signup |
+
+- **Change the admin password right after your first login** (Admin app → Settings).
+- Mentors are forced to set a new password on first login.
+- Reset a mentor's password back to the default:
+  ```bash
+  cd backend
+  node src/scripts/resetMentorPassword.js mentor1@codeyoung.dev
+  node src/scripts/resetMentorPassword.js --all
+  ```
+
+Log in to the admin app at https://code-young-8lim.vercel.app/ and the parent/mentor app at https://code-young-nzld.vercel.app/ (choose *I am a Parent* or *I am a Mentor*).
+
+---
+
+## 📏 Booking Rules
+
+| Rule | Detail |
+|------|--------|
+| Free trials per family (lifetime) | Set by the admin (default **5**). Cancelling does **not** give a trial back |
+| Free trials per parent **per day** | **2** per class date (in the parent's timezone). Cancelled trials free up the day. Set in `backend/src/utils/constants.js` |
+| Full Coaching | Not limited by free-trial rules. Requires child details (name, age/grade, subject, goals, phone) |
+| Already-booked times | A time the parent has already booked is removed from their preferred-slot list for that day, and double-booking is blocked by the server |
+| Mentor daily limit | Default **2** classes per mentor per day (per-mentor override available) |
+| Mentor matching | Active mentors with no conflict who are under their daily limit. The one with the fewest bookings that day is chosen |
+| No mentor free | The nearest open slot on the same day is booked and the parent is told |
+| Time zones | Stored in UTC, shown in each user's own IANA timezone |
+| Blackout dates | Admin can block dates from booking |
+
+---
+
+## 📡 API Reference
+
+Base URL: `https://codeyoung-1-paui.onrender.com/api`
+
+**Public**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| POST | `/auth/signup` | Start parent signup (sends code) |
+| POST | `/auth/signup/verify-otp` | Verify the code and create the account |
+| POST | `/auth/signup/resend-otp` | Resend the code |
+| POST | `/auth/login` | Parent or mentor login |
+| POST | `/auth/google` | Google login or signup |
+| POST | `/auth/admin-login` | Admin login |
+| POST | `/auth/logout` | Log out |
+
+**Logged in**
+
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| GET | `/auth/me` | any | Current user |
+| PATCH | `/auth/change-password` | any | Change own password |
+| PATCH | `/auth/country` | parent | Save country after Google signup (only while unset) |
+| GET | `/mentors/availability?date=YYYY-MM-DD&timezone=...` | parent | Open slots for a date, plus the daily free-trial count |
+| POST | `/bookings` | parent | Create a booking |
+| GET | `/bookings/me` | parent, mentor | Own upcoming and past bookings |
+| PATCH | `/bookings/:id/cancel` | parent, mentor, admin | Cancel a booking |
+
+**Admin only**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/admin/mentors` | List mentors |
+| POST | `/admin/mentors` | Create a mentor (sends invite email) |
+| PATCH | `/admin/mentors/:id` | Update a mentor |
+| GET | `/admin/mentors/:id/schedule` | A mentor's schedule |
+| GET | `/admin/config` | Read platform settings |
+| PATCH | `/admin/config` | Update platform settings |
+| GET | `/admin/bookings` | All bookings |
+| GET | `/admin/stats` | Dashboard stats |
+
+---
+
+## 📜 NPM Scripts
+
+**Backend** (`cd backend`)
+
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Start with auto-restart (nodemon) |
+| `npm start` | Start normally (used on Render) |
+| `npm run seed` | Create admin, mentors and settings (safe to re-run) |
+| `npm run reset-mentor-password` | Reset mentor passwords (see Default Accounts) |
+
+**Frontend App / Admin App** (`cd frontend-app` or `cd frontend-admin`)
+
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Dev server (port 5173 for the app, 5174 for admin) |
+| `npm run build` | Production build into `dist/` |
+| `npm run preview` | Preview the production build locally |
+
+---
+
+## 🛠 Troubleshooting
+
+| Problem | Likely cause and fix |
+|---------|----------------------|
+| First request is very slow | Render free tier was asleep. Wait up to a minute. Scheduled reminder emails only run while the service is awake |
+| Browser shows a **CORS error** | `FRONTEND_URL` / `ADMIN_FRONTEND_URL` on Render don't match the site URL exactly. Use `https://code-young-nzld.vercel.app`, **without** a trailing slash, then redeploy |
+| Frontend calls `localhost:5000` in production | `VITE_API_BASE_URL` is missing on Vercel. Add it, then **redeploy** |
+| Login works but you're logged out on refresh | Check `NODE_ENV=production` on Render and that the CORS URLs above are exact |
+| `[db] connection error` | Wrong `MONGO_URI`, wrong password (URL-encode special characters), or Atlas Network Access blocks the server |
+| Emails don't arrive | `EMAIL_FROM` is not a verified SendGrid sender, `SENDGRID_API_KEY` is wrong, or `RESEND_API_KEY` is set and overriding SendGrid. Check spam and SendGrid's *Activity* page |
+| Emails only appear in the server log | No `SENDGRID_API_KEY` set. That is the development fallback |
+| Google button is disabled | `VITE_FIREBASE_API_KEY` / `VITE_FIREBASE_APP_ID` missing |
+| Google popup fails on the live site | Add the Vercel domain to Firebase → Authentication → Authorized domains |
+| Admin or mentor can't log in on a fresh database | Run `npm run seed` (auto-seed is off in production) |
+| "Merge conflict marker" errors | Open the file, delete the `<<<<<<<`, `=======` and `>>>>>>>` lines, keep the correct code, then `git add` and commit |
+
+---
+
+## 🔒 Security Notes
+
+- Never commit `.env` files. They are in `.gitignore`. If a real secret was ever pushed to Git, **rotate it** (new MongoDB password, new SendGrid key, new `JWT_SECRET`).
+- Use a long random `JWT_SECRET` in production.
+- Change the default admin password (`@admin123`) after first login.
+- Signup can only create parent accounts. The server ignores any `role` a client sends.
+- Mentors and admins can never self-register.
+- Firebase web config values are public by design. Your MongoDB URI, SendGrid key and JWT secret are **not**. Keep them only in Render's environment settings.
