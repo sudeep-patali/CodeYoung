@@ -26,6 +26,8 @@ export const authApi = {
   resendSignupOtp: (data) => api.post('/auth/signup/resend-otp', data),
   login: (data) => api.post('/auth/login', data),
   googleAuth: (data) => api.post('/auth/google', data),
+  // First-time country prompt for parents who signed up with Google.
+  setCountry: (data) => api.patch('/auth/country', data),
   logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
   changePassword: (data) => api.patch('/auth/change-password', data),

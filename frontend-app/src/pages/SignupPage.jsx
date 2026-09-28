@@ -82,9 +82,10 @@ export default function SignupPage() {
   const handleGoogleCredential = async (idToken) => {
     setError('');
     try {
-      // Google sign-up is a one-click flow with no country step, so we fall
-      // back to the browser-detected zone here. The account can still set
-      // its country/timezone precisely later from profile settings.
+      // Google sign-up is a one-click flow with no country step here, so we
+      // start from the browser-detected zone. The parent dashboard then asks
+      // for their country the first time they land on it (see
+      // CountryPromptModal / user.needsCountry) and updates the timezone.
       await googleAuth({ idToken, timezone: detectedZone });
       navigate('/parent/dashboard?tab=book');
     } catch (err) {

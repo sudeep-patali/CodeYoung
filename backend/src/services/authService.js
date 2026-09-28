@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { verifyGoogleToken } = require('../config/googleAuth');
 const { generateOtp, hashOtp, compareOtp } = require('../utils/otp');
 const emailService = require('./emailService');
+const { isValidIanaZone } = require('../utils/timezone');
 
 const SALT_ROUNDS = 10;
 
@@ -35,6 +36,10 @@ async function toPublicUser(user) {
     role: user.role,
     timezone: user.timezone,
     country: user.country,
+    // True for a parent whose country isn't known yet (i.e. signed up with
+    // Google, which has no country step). The frontend uses this to ask for
+    // it the first time they land on the dashboard.
+    needsCountry: user.role === 'parent' && !user.country,
     mustResetPassword: user.mustResetPassword,
     freeTrialsUsedCount,
     maxFreeTrialsPerFamily,
@@ -283,6 +288,27 @@ async function loginOrSignupWithGoogle({ idToken, timezone, country }) {
 }
 
 /**
+ * Saves the country (and matching timezone) for a parent who doesn't have
+ * one yet - this is the "first time" prompt after a Google sign-up. It can
+ * only be used while country is still unset, so it's a one-time completion
+ * step rather than a general profile editor.
+ */
+async function setParentCountry({ userId, country, timezone }) {
+  const user = await User.findById(userId);
+  if (!user) throw ApiError.notFound('Account not found');
+  if (user.role !== 'parent') throw ApiError.forbidden('Only parent accounts have a country');
+  if (user.country) throw ApiError.conflict('Your country is already set.');
+
+  if (timezone) {
+    if (!isValidIanaZone(timezone)) throw ApiError.badRequest(`Invalid timezone: ${timezone}`);
+    user.timezone = timezone;
+  }
+  user.country = country;
+  await user.save();
+  return await toPublicUser(user);
+}
+
+/**
  * Used by the admin "create mentor" flow: creates a mentor User + linked
  * MentorProfile, with a temp password the mentor must change on first
  * login. Never exposed as a public signup route.
@@ -384,6 +410,7 @@ module.exports = {
   resendParentSignupOtp,
   loginWithPassword,
   loginOrSignupWithGoogle,
+  setParentCountry,
   createMentorByAdmin,
   loginAdmin,
   changePassword,

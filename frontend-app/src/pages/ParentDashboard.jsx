@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar';
 import SlotPicker from '../components/SlotPicker';
 import BookingList from '../components/BookingList';
 import LoadingSkeleton from '../components/LoadingSkeleton';
+import CountryPromptModal from '../components/CountryPromptModal';
 import { bookingApi, getErrorMessage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -49,6 +50,8 @@ export default function ParentDashboard() {
   return (
     <div>
       <Navbar />
+      {/* Parents who signed up with Google have no country yet - ask once. */}
+      {user.needsCountry && <CountryPromptModal />}
       <div className="container">
         <div className="dashboard-hero">
           <div>

@@ -72,6 +72,15 @@ const googleAuth = asyncHandler(async (req, res) => {
   res.json({ success: true, user, token, isNewAccount });
 });
 
+// PATCH /api/auth/country - parent only. Completes the profile of a parent
+// who signed up with Google (no country step there). Returns the updated
+// user so the frontend can drop the prompt without another /me call.
+const setCountry = asyncHandler(async (req, res) => {
+  const { country, timezone } = req.body;
+  const user = await authService.setParentCountry({ userId: req.user.id, country, timezone });
+  res.json({ success: true, user });
+});
+
 // POST /api/auth/admin-login - separate from the parent/mentor login;
 // no role toggle, admin accounts are pre-seeded only (see spec section D).
 const adminLogin = asyncHandler(async (req, res) => {
@@ -111,6 +120,7 @@ module.exports = {
   resendSignupOtp,
   login,
   googleAuth,
+  setCountry,
   adminLogin,
   logout,
   me,

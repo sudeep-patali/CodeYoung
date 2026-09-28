@@ -18,7 +18,7 @@ const { localToUTC, localDateString } = require('../utils/timezone');
  *   (d) fewer than the max classes/day on the mentor's own local date
  * Keep these rules in sync with matchingService.findBestMentor.
  */
-async function getAvailableSlots({ dateStr, ianaZone }) {
+async function getAvailableSlots({ dateStr, ianaZone, excludeRanges = [] }) {
   const config = await AdminConfig.getSingleton();
   const { startHour, endHour } = config.businessHours;
   const slotDurationMinutes = config.slotDurationMinutes;
@@ -42,6 +42,8 @@ async function getAvailableSlots({ dateStr, ianaZone }) {
       }
       if (startTimeUTC.getTime() < now) continue; // already passed
       const endTimeUTC = new Date(startTimeUTC.getTime() + slotDurationMinutes * 60000);
+      // Times the parent has already booked drop out of their preferred-slot list.
+      if (excludeRanges.some((r) => startTimeUTC < r.endTimeUTC && endTimeUTC > r.startTimeUTC)) continue;
       candidates.push({ timeStr, startTimeUTC, endTimeUTC });
     }
   }

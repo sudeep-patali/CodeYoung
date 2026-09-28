@@ -105,7 +105,13 @@ async function findBestMentor({ startTimeUTC, endTimeUTC }) {
  * This is a best-effort scan over a small number of subsequent slots
  * rather than an exhaustive search, to keep the request fast.
  */
-async function suggestAlternateSlots({ dateStr, ianaZone, slotDurationMinutes, maxSuggestions = 3 }) {
+async function suggestAlternateSlots({
+  dateStr,
+  ianaZone,
+  slotDurationMinutes,
+  maxSuggestions = 3,
+  excludeRanges = [],
+}) {
   const { localToUTC } = require('../utils/timezone');
   const suggestions = [];
   const adminConfig = await AdminConfig.getSingleton();
@@ -121,6 +127,8 @@ async function suggestAlternateSlots({ dateStr, ianaZone, slotDurationMinutes, m
         continue;
       }
       const endTimeUTC = new Date(startTimeUTC.getTime() + slotDurationMinutes * 60000);
+      // Never suggest a time the parent already has a class at.
+      if (excludeRanges.some((r) => startTimeUTC < r.endTimeUTC && endTimeUTC > r.startTimeUTC)) continue;
       const match = await findBestMentor({ startTimeUTC, endTimeUTC });
       if (match) {
         suggestions.push({ startTimeUTC, endTimeUTC, timeStr });
@@ -154,6 +162,7 @@ async function findNearestAvailableSlot({
   ianaZone,
   slotDurationMinutes,
   maxStepsEachDirection = 24,
+  excludeRanges = [],
 }) {
   const { localToUTC, isValidIanaZone } = require('../utils/timezone');
   const adminConfig = await AdminConfig.getSingleton();
@@ -193,6 +202,8 @@ async function findNearestAvailableSlot({
   for (let i = 0; i < limit; i++) {
     const candidate = candidates[i];
     const endTimeUTC = new Date(candidate.startTimeUTC.getTime() + slotDurationMinutes * 60000);
+    // Skip times the parent already has a class at (never auto-adjust onto them).
+    if (excludeRanges.some((r) => candidate.startTimeUTC < r.endTimeUTC && endTimeUTC > r.startTimeUTC)) continue;
     const match = await findBestMentor({ startTimeUTC: candidate.startTimeUTC, endTimeUTC });
     if (match) {
       return { ...match, startTimeUTC: candidate.startTimeUTC, endTimeUTC, timeStr: candidate.timeStr };

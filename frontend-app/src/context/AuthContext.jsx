@@ -59,6 +59,15 @@ export function AuthProvider({ children }) {
     return res.data;
   }, []);
 
+  // Saves the country a Google-signup parent is asked for on first visit.
+  // The backend returns the updated user (needsCountry now false), which is
+  // what makes the prompt disappear.
+  const setCountry = useCallback(async (payload) => {
+    const res = await authApi.setCountry(payload);
+    setUser(res.data.user);
+    return res.data.user;
+  }, []);
+
   const logout = useCallback(async () => {
     await authApi.logout();
     setUser(null);
@@ -83,6 +92,7 @@ export function AuthProvider({ children }) {
         resendSignupOtp,
         login,
         googleAuth,
+        setCountry,
         logout,
         changePassword,
       }}

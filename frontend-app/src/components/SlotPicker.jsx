@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, PartyPopper, CalendarX } from 'lucide-react';
 import { mentorApi, bookingApi, getErrorMessage } from '../services/api';
 import { toDateInputValue, formatInZone } from '../utils/timezone';
@@ -19,6 +19,13 @@ const EMPTY_STUDENT_DETAILS = {
  * matching happens server-side -> success or a friendly "fully booked"
  * error with alternates.
  *
+ * Free trials are capped at N per parent per day (the server sends the cap
+ * and how many are used on the chosen date as `trialLimit`). That cap is
+ * announced up front next to the "Preferred Time Slot" badge, and a parent
+ * who has reached it for a date sees a message instead of bookable slots.
+ * A time the parent has already booked is removed from their list for that
+ * day (the server leaves it out of the availability response).
+ *
  * A parent who has already used up their free trials (an admin-configured
  * count, default 5) can't select "Free Trial" again (mirrors the
  * server-side check), but Full Coaching stays available regardless.
@@ -32,6 +39,8 @@ export default function SlotPicker({ onBooked }) {
 
   const [date, setDate] = useState(toDateInputValue());
   const [slots, setSlots] = useState([]);
+  // { max, used, remaining } for the selected date, from the availability API.
+  const [trialLimit, setTrialLimit] = useState(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [contactEmail, setContactEmail] = useState(user?.email || '');
@@ -41,28 +50,40 @@ export default function SlotPicker({ onBooked }) {
   const [submitting, setSubmitting] = useState(false);
 
   const isFullCoaching = bookingType === 'full_coaching';
+  // The per-day cap only applies to free trials, never Full Coaching.
+  const trialDayLimitReached = !isFullCoaching && !!trialLimit && trialLimit.remaining <= 0;
+
+  // Loads the parent's preferred-slot list for `date`. Quiet refreshes (after
+  // a booking attempt) keep the current success/error banner on screen.
+  const fetchSlots = useCallback(
+    async ({ isCancelled = () => false, quiet = false } = {}) => {
+      if (!quiet) {
+        setLoadingSlots(true);
+        setSelectedSlot(null);
+        setError('');
+        setAlternates([]);
+      }
+      try {
+        const res = await mentorApi.getAvailability(date, user.timezone);
+        if (isCancelled()) return;
+        setSlots(res.data.slots || []);
+        setTrialLimit(res.data.trialLimit || null);
+      } catch (err) {
+        if (!isCancelled() && !quiet) setError(getErrorMessage(err, 'Could not load availability.'));
+      } finally {
+        if (!isCancelled() && !quiet) setLoadingSlots(false);
+      }
+    },
+    [date, user.timezone]
+  );
 
   useEffect(() => {
     let cancelled = false;
-    setLoadingSlots(true);
-    setSelectedSlot(null);
-    setError('');
-    setAlternates([]);
-    mentorApi
-      .getAvailability(date, user.timezone)
-      .then((res) => {
-        if (!cancelled) setSlots(res.data.slots || []);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(getErrorMessage(err, 'Could not load availability.'));
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSlots(false);
-      });
+    fetchSlots({ isCancelled: () => cancelled });
     return () => {
       cancelled = true;
     };
-  }, [date, user.timezone]);
+  }, [fetchSlots]);
 
   const updateDetail = (field) => (e) =>
     setStudentDetails((prev) => ({ ...prev, [field]: e.target.value }));
@@ -117,9 +138,14 @@ export default function SlotPicker({ onBooked }) {
       }
       setSelectedSlot(null);
       onBooked?.();
+      // The booked time (which may differ from the preferred one if we
+      // adjusted it) drops out of the list, and the "N of 2 used" count updates.
+      await fetchSlots({ quiet: true });
     } catch (err) {
       setError(getErrorMessage(err, 'This time is fully booked - please try a different slot.'));
       setAlternates(err?.response?.data?.details?.alternateSlots || []);
+      // e.g. the daily free-trial limit was hit from another tab/device.
+      await fetchSlots({ quiet: true });
     } finally {
       setSubmitting(false);
     }
@@ -238,18 +264,33 @@ export default function SlotPicker({ onBooked }) {
 
           {loadingSlots && <p>Loading available times…</p>}
 
-          {!loadingSlots && slots.length === 0 && (
+          {!loadingSlots && trialDayLimitReached && (
+            <div className="error-banner">
+              <AlertTriangle size={16} style={{ flex: 'none', marginTop: 2 }} />
+              You can have only {trialLimit.max} free trial classes per day, and you've already booked{' '}
+              {trialLimit.used} for this date. Please choose another date for your next free trial.
+            </div>
+          )}
+
+          {!loadingSlots && slots.length === 0 && !trialDayLimitReached && (
             <p className="empty-state">
               <span className="empty-icon"><CalendarX size={34} /></span>
               No slots available on this date. Try another day.
             </p>
           )}
 
-          {!loadingSlots && slots.length > 0 && (
+          {!loadingSlots && (slots.length > 0 || (!isFullCoaching && trialLimit)) && (
             <>
               <div className="slot-section-header">
                 <label>Available times</label>
-                <span className="side-heading">Preferred Time Slot</span>
+                <div className="slot-header-badges">
+                  <span className="side-heading">Preferred Time Slot</span>
+                  {!isFullCoaching && trialLimit && (
+                    <span className={`trial-limit-badge ${trialDayLimitReached ? 'reached' : ''}`}>
+                      Max {trialLimit.max} free trials per day · {trialLimit.used} of {trialLimit.max} used on this date
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="slot-grid">
                 {slots.map((slot) => (
@@ -257,6 +298,8 @@ export default function SlotPicker({ onBooked }) {
                     key={slot.timeStr}
                     className={`slot-btn ${selectedSlot?.timeStr === slot.timeStr ? 'selected' : ''}`}
                     onClick={() => setSelectedSlot(slot)}
+                    disabled={trialDayLimitReached}
+                    title={trialDayLimitReached ? 'Daily free trial limit reached for this date' : ''}
                   >
                     {slot.timeStr}
                   </button>
@@ -278,7 +321,7 @@ export default function SlotPicker({ onBooked }) {
             </div>
           )}
 
-          {selectedSlot && (
+          {selectedSlot && !trialDayLimitReached && (
             <div style={{ marginTop: 20, borderTop: '1px solid var(--color-border)', paddingTop: 20 }}>
               <div className="form-group">
                 <label htmlFor="contactEmail">Confirm the email for this booking</label>

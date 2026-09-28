@@ -2,10 +2,59 @@ const { v4: uuidv4 } = require('uuid');
 const { User, Booking } = require('../models');
 const ApiError = require('../utils/ApiError');
 const { isLikelyDeliverable } = require('../utils/emailValidator');
-const { localToUTC, localDateString } = require('../utils/timezone');
+const { localToUTC, localDateString, localDayBoundsUTC } = require('../utils/timezone');
+const { MAX_FREE_TRIALS_PER_DAY } = require('../utils/constants');
 const { findBestMentor, suggestAlternateSlots, findNearestAvailableSlot } = require('./matchingService');
 const emailService = require('./emailService');
 const env = require('../config/env');
+
+
+function overlapsAny(startTimeUTC, endTimeUTC, ranges) {
+  return ranges.some((r) => startTimeUTC < r.endTimeUTC && endTimeUTC > r.startTimeUTC);
+}
+
+/**
+ * Everything this parent already has (not cancelled) on one calendar date
+ * in the given timezone. Used for three things:
+ *  - the max-free-trials-per-day rule (`trialLimit`)
+ *  - hiding times the parent already booked from their preferred-slot list
+ *    (`bookedRanges` - these are the REAL booked times, which can differ
+ *    from the preferred time if the booking was auto-adjusted)
+ *  - stopping the parent from double-booking themselves at the same time
+ *
+ * `bookingType !== 'full_coaching'` (rather than `=== 'trial'`) because
+ * .lean() skips schema defaults, so very old documents may lack the field.
+ */
+async function getParentDayBookingInfo({ parentId, dateStr, ianaZone }) {
+  const { startUTC, endUTC } = localDayBoundsUTC(dateStr, ianaZone);
+  const bookings = await Booking.find({
+    parentId,
+    status: { $ne: 'cancelled' },
+    startTimeUTC: { $gte: startUTC, $lt: endUTC },
+  })
+    .select('bookingType startTimeUTC endTimeUTC')
+    .lean();
+
+  const used = bookings.filter((b) => b.bookingType !== 'full_coaching').length;
+  return {
+    bookedRanges: bookings.map((b) => ({
+      startTimeUTC: b.startTimeUTC,
+      endTimeUTC: b.endTimeUTC,
+    })),
+    trialLimit: {
+      max: MAX_FREE_TRIALS_PER_DAY,
+      used,
+      remaining: Math.max(0, MAX_FREE_TRIALS_PER_DAY - used),
+    },
+  };
+}
+
+function dailyTrialLimitError() {
+  return ApiError.conflict(
+    `You can have only ${MAX_FREE_TRIALS_PER_DAY} free trial classes per day. ` +
+      'Please choose another date for your next free trial.'
+  );
+}
 
 function generateDummyMeetLink(bookingType) {
   const pathSegment = bookingType === 'full_coaching' ? 'coaching' : 'trial';
@@ -49,6 +98,17 @@ async function createBooking({
     );
   }
 
+  // Per-day cap on free trials (see utils/constants.js). Checked before any
+  // email/matching work so a blocked request fails fast.
+  const dayInfo = await getParentDayBookingInfo({
+    parentId: parentUser._id,
+    dateStr,
+    ianaZone: parentUser.timezone,
+  });
+  if (!isFullCoaching && dayInfo.trialLimit.remaining <= 0) {
+    throw dailyTrialLimitError();
+  }
+
   const emailToUse = contactEmail || parentUser.email;
 
   // Step 1: email existence/format check BEFORE any matching or booking
@@ -78,6 +138,15 @@ async function createBooking({
     throw ApiError.conflict('This date is not available for bookings.');
   }
 
+  // A parent can't be in two classes at once: a time they've already booked
+  // is not offered in their preferred-slot list, and is rejected here too so
+  // it can't be bypassed by calling the API directly.
+  if (overlapsAny(startTimeUTC, endTimeUTC, dayInfo.bookedRanges)) {
+    throw ApiError.conflict(
+      'You already have a class booked at that time. Please pick a different time.'
+    );
+  }
+
   // Step 2: matching algorithm for the parent's exact preferred slot.
   let match = await findBestMentor({ startTimeUTC, endTimeUTC });
   let requestedTimeUTC = null; // stays null unless we have to adjust below
@@ -96,6 +165,7 @@ async function createBooking({
       preferredTimeUTC: startTimeUTC,
       ianaZone: parentUser.timezone,
       slotDurationMinutes,
+      excludeRanges: dayInfo.bookedRanges,
     });
 
     if (nearest) {
@@ -111,6 +181,7 @@ async function createBooking({
         dateStr,
         ianaZone: parentUser.timezone,
         slotDurationMinutes,
+        excludeRanges: dayInfo.bookedRanges,
       });
       throw ApiError.conflict(
         'This time is fully booked - please try a different slot.',
@@ -150,6 +221,21 @@ async function createBooking({
       throw ApiError.conflict('This time is fully booked - please try a different slot.');
     }
     throw err;
+  }
+
+  // Race guard for the daily cap: two simultaneous requests can both pass
+  // the check above. Recount now that ours exists; if the cap is exceeded,
+  // undo this booking (before any counter bump or email) and fail safe.
+  if (!isFullCoaching) {
+    const after = await getParentDayBookingInfo({
+      parentId: parentUser._id,
+      dateStr,
+      ianaZone: parentUser.timezone,
+    });
+    if (after.trialLimit.used > MAX_FREE_TRIALS_PER_DAY) {
+      await Booking.deleteOne({ _id: booking._id });
+      throw dailyTrialLimitError();
+    }
   }
 
   // Increment the used-trials count the moment the booking is actually
@@ -245,4 +331,9 @@ async function cancelBooking({ bookingId, requestingUser }) {
   return booking;
 }
 
-module.exports = { createBooking, getBookingsForUser, cancelBooking };
+module.exports = {
+  createBooking,
+  getBookingsForUser,
+  cancelBooking,
+  getParentDayBookingInfo,
+};

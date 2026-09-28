@@ -1,5 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
 const { getAvailableSlots } = require('../services/availabilityService');
+const { getParentDayBookingInfo } = require('../services/bookingService');
 const ApiError = require('../utils/ApiError');
 const { isValidIanaZone } = require('../utils/timezone');
 
@@ -14,8 +15,19 @@ const getAvailability = asyncHandler(async (req, res) => {
     throw ApiError.badRequest(`Invalid IANA timezone: ${zone}`);
   }
 
-  const result = await getAvailableSlots({ dateStr: date, ianaZone: zone });
-  res.json({ success: true, ...result });
+  // Slots this parent already booked that day are removed from their list,
+  // and `trialLimit` lets the UI show "N of 2 free trials used" up front.
+  const dayInfo = await getParentDayBookingInfo({
+    parentId: req.user.id,
+    dateStr: date,
+    ianaZone: zone,
+  });
+  const result = await getAvailableSlots({
+    dateStr: date,
+    ianaZone: zone,
+    excludeRanges: dayInfo.bookedRanges,
+  });
+  res.json({ success: true, ...result, trialLimit: dayInfo.trialLimit });
 });
 
 module.exports = { getAvailability };

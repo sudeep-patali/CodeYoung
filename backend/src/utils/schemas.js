@@ -58,6 +58,18 @@ const googleAuthSchema = z.object({
   country: z.string().trim().min(2).max(2).toUpperCase().optional(),
 });
 
+// Used by the "which country are you in?" prompt shown to a parent the
+// first time after they sign up with Google (see authService.setParentCountry).
+// 'OTHER' matches the frontend's "Other / not listed" option.
+const setCountrySchema = z.object({
+  country: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^([A-Z]{2}|OTHER)$/, 'Please select your country'),
+  timezone: z.string().min(1).optional(),
+});
+
 const studentDetailsSchema = z.object({
   childName: z.string().min(1, "Child's name is required").max(100),
   ageOrGrade: z.string().min(1, 'Age or grade is required').max(50),
@@ -130,6 +142,7 @@ module.exports = {
   adminLoginSchema,
   changePasswordSchema,
   googleAuthSchema,
+  setCountrySchema,
   createBookingSchema,
   availabilityQuerySchema,
   createMentorSchema,

@@ -26,3 +26,7 @@ export const firebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfi
 export const firebaseApp = firebaseConfigured ? initializeApp(firebaseConfig) : null;
 export const auth = firebaseApp ? getAuth(firebaseApp) : null;
 export const googleProvider = new GoogleAuthProvider();
+
+// Always show Google's account chooser instead of silently reusing the
+// account the browser last picked, so a different Gmail can be used each time.
+googleProvider.setCustomParameters({ prompt: 'select_account' });

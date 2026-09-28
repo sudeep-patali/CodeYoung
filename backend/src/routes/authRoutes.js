@@ -2,6 +2,7 @@ const express = require('express');
 const authController = require('../controllers/authController');
 const validate = require('../middleware/validate');
 const authGuard = require('../middleware/authGuard');
+const roleGuard = require('../middleware/roleGuard');
 const {
   signupSchema,
   verifySignupOtpSchema,
@@ -10,6 +11,7 @@ const {
   adminLoginSchema,
   changePasswordSchema,
   googleAuthSchema,
+  setCountrySchema,
 } = require('../utils/schemas');
 
 const router = express.Router();
@@ -30,6 +32,14 @@ router.post(
 router.post('/login', validate(loginSchema), authController.login);
 router.post('/admin-login', validate(adminLoginSchema), authController.adminLogin);
 router.post('/google', validate(googleAuthSchema), authController.googleAuth);
+// First-time country prompt for parents who signed up with Google.
+router.patch(
+  '/country',
+  authGuard,
+  roleGuard('parent'),
+  validate(setCountrySchema),
+  authController.setCountry
+);
 router.post('/logout', authController.logout);
 router.get('/me', authGuard, authController.me);
 // Any authenticated role (parent, mentor, admin) can change their own
